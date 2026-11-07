@@ -1,0 +1,24 @@
+[project]
+name = "firebreak"
+version = "0.1.0"
+description = "Firebreak backend: connect Dallas property data, predict where distress spreads next, price it, plan the response."
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "scikit-learn>=1.5",
+    "scipy>=1.13",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "pyarrow>=26.0.1",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["firebreak"]

@@ -1,0 +1,522 @@
+{
+ "as_of": "2026-11-07",
+ "horizon_days": 90,
+ "events_start": "2024-11-07",
+ "backtest_cutoff": "2026-07-01",
+ "counts": {
+  "buildings": 241588,
+  "tenants": 22406,
+  "reports": 649925,
+  "infra_failures": 50872,
+  "by_class": {
+   "home": 213378,
+   "commercial": 17071,
+   "multifamily": 10843,
+   "industrial": 296
+  },
+  "placed_by": {
+   "311": 135568,
+   "street": 106020
+  }
+ },
+ "model": {
+  "train_cutoffs": [
+   "2024-01-01",
+   "2024-07-01",
+   "2025-01-01",
+   "2025-07-01",
+   "2026-01-01",
+   "2026-04-01"
+  ],
+  "test_cutoff": "2026-07-01",
+  "horizon_days": 90,
+  "train_rows": 1449528,
+  "test_rows": 241588,
+  "test_positives": 15451,
+  "base": {
+   "auc": 0.7273,
+   "avg_precision": 0.2471,
+   "watch_list": 2000,
+   "watch_precision": 0.6145,
+   "watch_lift": 9.61,
+   "cases_caught": 1229,
+   "base_rate": 0.064
+  },
+  "network": {
+   "auc": 0.7349,
+   "avg_precision": 0.249,
+   "watch_list": 2000,
+   "watch_precision": 0.614,
+   "watch_lift": 9.6,
+   "cases_caught": 1228,
+   "base_rate": 0.064
+  },
+  "network_only_first_time_cases": 0,
+  "by_class": {
+   "home": {
+    "base": {
+     "auc": 0.6959,
+     "avg_precision": 0.1647,
+     "watch_list": 1766,
+     "watch_precision": 0.4037,
+     "watch_lift": 7.29,
+     "cases_caught": 713,
+     "base_rate": 0.0554
+    },
+    "network": {
+     "auc": 0.7046,
+     "avg_precision": 0.1652,
+     "watch_list": 1766,
+     "watch_precision": 0.3941,
+     "watch_lift": 7.11,
+     "cases_caught": 696,
+     "base_rate": 0.0554
+    }
+   },
+   "multifamily": {
+    "base": {
+     "auc": 0.802,
+     "avg_precision": 0.5537,
+     "watch_list": 89,
+     "watch_precision": 0.9888,
+     "watch_lift": 7.16,
+     "cases_caught": 88,
+     "base_rate": 0.1382
+    },
+    "network": {
+     "auc": 0.8081,
+     "avg_precision": 0.556,
+     "watch_list": 89,
+     "watch_precision": 0.9775,
+     "watch_lift": 7.08,
+     "cases_caught": 87,
+     "base_rate": 0.1382
+    }
+   },
+   "commercial": {
+    "base": {
+     "auc": 0.7957,
+     "avg_precision": 0.4021,
+     "watch_list": 141,
+     "watch_precision": 0.766,
+     "watch_lift": 6.23,
+     "cases_caught": 108,
+     "base_rate": 0.1229
+    },
+    "network": {
+     "auc": 0.8001,
+     "avg_precision": 0.4091,
+     "watch_list": 141,
+     "watch_precision": 0.7943,
+     "watch_lift": 6.46,
+     "cases_caught": 112,
+     "base_rate": 0.1229
+    }
+   },
+   "industrial": {
+    "base": {
+     "auc": 0.7671,
+     "avg_precision": 0.367,
+     "watch_list": 50,
+     "watch_precision": 0.34,
+     "watch_lift": 3.05,
+     "cases_caught": 17,
+     "base_rate": 0.1115
+    },
+    "network": {
+     "auc": 0.7739,
+     "avg_precision": 0.3747,
+     "watch_list": 50,
+     "watch_precision": 0.28,
+     "watch_lift": 2.51,
+     "cases_caught": 14,
+     "base_rate": 0.1115
+    }
+   }
+  }
+ },
+ "edges": {
+  "block": {
+   "edge": "A report within 50 m in the last 30 days",
+   "exposed_buildings": 76123,
+   "rate_exposed": 0.0434,
+   "rate_matched": 0.0345,
+   "ratio": 1.26,
+   "per_cutoff": {
+    "2025-07-01": 1.29,
+    "2026-01-01": 1.23,
+    "2026-04-01": 1.31,
+    "2026-07-01": 1.17
+   }
+  },
+  "owner": {
+   "edge": "The same owner had a report at another building in the last year",
+   "exposed_buildings": 16411,
+   "rate_exposed": 0.0485,
+   "rate_matched": 0.0404,
+   "ratio": 1.2,
+   "per_cutoff": {
+    "2025-07-01": 1.36,
+    "2026-01-01": 1.32,
+    "2026-04-01": 1.19,
+    "2026-07-01": 0.89
+   }
+  },
+  "infrastructure": {
+   "edge": "A water, sewer, street or signal failure within 250 m in the last 180 days",
+   "exposed_buildings": 390569,
+   "rate_exposed": 0.0333,
+   "rate_matched": 0.0336,
+   "ratio": 0.99,
+   "per_cutoff": {
+    "2025-07-01": 0.89,
+    "2026-01-01": 1.03,
+    "2026-04-01": 1.07,
+    "2026-07-01": 1.05
+   }
+  }
+ },
+ "assumptions": {
+  "spillover_pct_per_case": {
+   "value": 0.009,
+   "source": "Immergluck & Smith (2006), Housing Policy Debate 17(1): each foreclosure within 1/8 mile (about 200 m) lowers nearby single-family values about 0.9%. Applied only to residential neighbors (homes and multifamily), for any new distress case."
+  },
+  "spillover_radius_m": {
+   "value": 200,
+   "source": "1/8 mile, matching the study above."
+  },
+  "rent_psf_year": {
+   "value": {
+    "commercial": 24.0,
+    "industrial": 8.0
+   },
+   "source": "Placeholder Dallas asking rents. Ask CBRE mentors for the current MarketView numbers."
+  },
+  "rent_unit_month": {
+   "value": 1350.0,
+   "source": "Placeholder Dallas average apartment rent per unit."
+  },
+  "disruption_months_per_case": {
+   "value": 1.0,
+   "source": "Placeholder: a code or nuisance case disrupts one month of rent while it is open."
+  },
+  "repair_psf": {
+   "value": {
+    "good": 8.0,
+    "average": 18.0,
+    "fair": 32.0,
+    "poor": 55.0
+   },
+   "source": "Placeholder rehab tiers by DCAD condition (WHOLZR uses the same tiers)."
+  },
+  "arv_over_dcad": {
+   "value": 1.1,
+   "source": "DCAD market value lags sales; WHOLZR placeholder."
+  },
+  "buyer_pct_of_arv": {
+   "value": 0.7,
+   "source": "Standard cash-buyer rule (70% of ARV minus repairs)."
+  },
+  "min_assignment_fee": {
+   "value": 10000,
+   "source": "WHOLZR policy minimum fee."
+  },
+  "outreach_cost": {
+   "value": 4.0,
+   "source": "One mailed letter plus skip trace."
+  },
+  "inspection_cost": {
+   "value": 450.0,
+   "source": "Placeholder building inspection."
+  }
+ },
+ "classes": [
+  "home",
+  "multifamily",
+  "commercial",
+  "industrial"
+ ],
+ "kinds": [
+  "code",
+  "rental",
+  "tenant",
+  "construction",
+  "vacancy",
+  "nuisance",
+  "infra"
+ ],
+ "buildings_layout": [
+  {
+   "name": "lon",
+   "dtype": "float32",
+   "offset": 0,
+   "length": 241588
+  },
+  {
+   "name": "lat",
+   "dtype": "float32",
+   "offset": 966352,
+   "length": 241588
+  },
+  {
+   "name": "value",
+   "dtype": "float32",
+   "offset": 1932704,
+   "length": 241588
+  },
+  {
+   "name": "risk",
+   "dtype": "uint8",
+   "offset": 2899056,
+   "length": 241588
+  },
+  {
+   "name": "lift",
+   "dtype": "uint8",
+   "offset": 3140644,
+   "length": 241588
+  },
+  {
+   "name": "risk_backtest",
+   "dtype": "uint8",
+   "offset": 3382232,
+   "length": 241588
+  },
+  {
+   "name": "hit_backtest",
+   "dtype": "uint8",
+   "offset": 3623820,
+   "length": 241588
+  },
+  {
+   "name": "class",
+   "dtype": "uint8",
+   "offset": 3865408,
+   "length": 241588
+  },
+  {
+   "name": "reports_365",
+   "dtype": "uint8",
+   "offset": 4106996,
+   "length": 241588
+  }
+ ],
+ "events_layout": [
+  {
+   "name": "lon",
+   "dtype": "float32",
+   "offset": 0,
+   "length": 317417
+  },
+  {
+   "name": "lat",
+   "dtype": "float32",
+   "offset": 1269668,
+   "length": 317417
+  },
+  {
+   "name": "day",
+   "dtype": "uint16",
+   "offset": 2539336,
+   "length": 317417
+  },
+  {
+   "name": "kind",
+   "dtype": "uint8",
+   "offset": 3174172,
+   "length": 317417
+  }
+ ],
+ "risk_scale": "uint8 / 255 = probability of a new report in 90 days",
+ "lift_scale": "uint8 / 255 / 4 = probability points the network adds over the base model",
+ "sources": {
+  "dcad": "Dallas Central Appraisal District 2026 certified export, data as of 2026-09-15",
+  "dallas_311": "Dallas Open Data 311 Service Requests (d7e7-envw), pulled 2026-11-07"
+ },
+ "buyers": [
+  {
+   "name": "SEGO ECHELON LLC",
+   "buys_2y": 44,
+   "classes": [
+    "home"
+   ]
+  },
+  {
+   "name": "MMD TEXAS INVESTMENTS LLC",
+   "buys_2y": 25,
+   "classes": [
+    "home"
+   ]
+  },
+  {
+   "name": "PPRE PROPERTIES LLC",
+   "buys_2y": 24,
+   "classes": [
+    "commercial",
+    "home"
+   ]
+  },
+  {
+   "name": "SFR OWNER 2 LLC",
+   "buys_2y": 22,
+   "classes": [
+    "home",
+    "multifamily"
+   ]
+  },
+  {
+   "name": "WH1 LLC",
+   "buys_2y": 21,
+   "classes": [
+    "home"
+   ]
+  },
+  {
+   "name": "FKH SFR Q LP",
+   "buys_2y": 17,
+   "classes": [
+    "home"
+   ]
+  },
+  {
+   "name": "PR BORROWER 26 LLC",
+   "buys_2y": 16,
+   "classes": [
+    "home"
+   ]
+  },
+  {
+   "name": "707 TOWNHOMES LLC",
+   "buys_2y": 16,
+   "classes": [
+    "home"
+   ]
+  },
+  {
+   "name": "BPHB ASSETCO LLC",
+   "buys_2y": 15,
+   "classes": [
+    "home",
+    "multifamily"
+   ]
+  },
+  {
+   "name": "OLERIO HOMES LLC",
+   "buys_2y": 15,
+   "classes": [
+    "home"
+   ]
+  },
+  {
+   "name": "PR BORROWER 27 LLC",
+   "buys_2y": 15,
+   "classes": [
+    "home"
+   ]
+  },
+  {
+   "name": "FF I BORROWER II LLC",
+   "buys_2y": 14,
+   "classes": [
+    "home",
+    "multifamily"
+   ]
+  },
+  {
+   "name": "CS85 PROPERTIES LLC",
+   "buys_2y": 14,
+   "classes": [
+    "home"
+   ]
+  },
+  {
+   "name": "YUEL REAL ESTATE INVESTMENT LLC",
+   "buys_2y": 11,
+   "classes": [
+    "commercial",
+    "home",
+    "multifamily"
+   ]
+  },
+  {
+   "name": "EID INVESTMENTS LLC",
+   "buys_2y": 11,
+   "classes": [
+    "commercial"
+   ]
+  },
+  {
+   "name": "FYR SFR BORROWER LLC",
+   "buys_2y": 11,
+   "classes": [
+    "home"
+   ]
+  },
+  {
+   "name": "JESUDA CONSTRUCTION LLC",
+   "buys_2y": 10,
+   "classes": [
+    "home",
+    "multifamily"
+   ]
+  },
+  {
+   "name": "RH PARTNERS OWNERCO 2 LLC",
+   "buys_2y": 10,
+   "classes": [
+    "home"
+   ]
+  },
+  {
+   "name": "CS85 PROPERTIES LLC",
+   "buys_2y": 10,
+   "classes": [
+    "home"
+   ]
+  },
+  {
+   "name": "RM3 SFR A LLC",
+   "buys_2y": 10,
+   "classes": [
+    "home"
+   ]
+  },
+  {
+   "name": "QSR 50 LLC",
+   "buys_2y": 9,
+   "classes": [
+    "commercial"
+   ]
+  },
+  {
+   "name": "TEXAN MUTUAL LLC",
+   "buys_2y": 9,
+   "classes": [
+    "home"
+   ]
+  },
+  {
+   "name": "OCCM INC",
+   "buys_2y": 9,
+   "classes": [
+    "home",
+    "multifamily"
+   ]
+  },
+  {
+   "name": "SED PROPERTIES LLC",
+   "buys_2y": 8,
+   "classes": [
+    "home",
+    "multifamily"
+   ]
+  },
+  {
+   "name": "OASIS EXCURSION LLC",
+   "buys_2y": 8,
+   "classes": [
+    "home"
+   ]
+  }
+ ]
+}

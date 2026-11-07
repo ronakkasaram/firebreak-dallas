@@ -1,0 +1,22 @@
+# Secrets
+.env
+.env.*
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Data: raw downloads and intermediate tables are rebuilt by the pipeline
+data/raw/
+data/work/
+
+# Web
+node_modules/
+dist/
+
+# Agent board local state
+.board/
+
+# Mac
+.DS_Store

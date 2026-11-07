@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Firebreak</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,600;1,6..96,400&family=Martian+Mono:wght@300;400;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div id="app">
+    <main id="stage">
+      <div id="map"></div>
+
+      <header class="hud">
+        <div class="mark">FIREBREAK<span>predict before it spreads · Dallas</span></div>
+        <div class="hud-stats" id="hud-stats"></div>
+      </header>
+
+      <div class="modes" id="modes">
+        <button data-mode="spread" class="on">[ spread ]</button>
+        <button data-mode="backtest">[ proof ]</button>
+        <button data-mode="forecast">[ next 90 days ]</button>
+      </div>
+
+      <div class="legend" id="legend"></div>
+
+      <footer class="timebar">
+        <div class="timebar-row">
+          <button id="play" class="play" aria-label="Play">▶</button>
+          <b id="date">—</b>
+          <span id="caption" class="muted"></span>
+        </div>
+        <input id="slider" type="range" min="0" max="820" value="730" step="1" />
+        <div class="ticks" id="ticks"></div>
+      </footer>
+      <div id="loading" class="loading">reading 241,000 buildings …</div>
+    </main>
+
+    <aside id="side">
+      <section id="claim"></section>
+      <section id="list-wrap">
+        <div class="kicker-row">
+          <div class="kicker">Where to cut the firebreak</div>
+          <div class="filters" id="filters">
+            <button data-c="all" class="on">all</button>
+            <button data-c="home">homes</button>
+            <button data-c="multifamily">multifamily</button>
+            <button data-c="commercial">commercial</button>
+          </div>
+        </div>
+        <ol id="list"></ol>
+      </section>
+      <section id="dossier" hidden></section>
+    </aside>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
