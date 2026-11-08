@@ -99,7 +99,7 @@ The console follows one workflow, keys 1 to 5. The presenter guide, with scripts
 4. **Act.** A budget plan ranked by reports prevented per dollar, a portfolio view of the risk coming from neighbours an owner does not control, work-order export and hold to approve. Acquisition leads for repair-and-resell buyers sit in a third tab.
 5. **Evidence.** The model card: data joins, held-out results, the Hawkes fit and residuals, fairness by council district, the closure natural experiment with its placebos, and limits.
 
-Search (`/`) finds streets, 100-blocks, building names and company portfolios. Every view has a shareable link (`#detect`, `#simulate-b83148`).
+Press `T` for a guided tour that drives the console by itself. Search and commands (`⌘K` or `/`) find streets, 100-blocks, building names and company portfolios, and jump to any view or action. **Act** also writes a one-page brief for each council district. Every view has a shareable link (`#detect`, `#simulate-b83148`).
 
 ## The numbers behind the dollars
 

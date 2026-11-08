@@ -4,7 +4,7 @@ import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { MapboxOverlay } from '@deck.gl/mapbox';
 import { ScatterplotLayer, ColumnLayer, ArcLayer, TextLayer } from '@deck.gl/layers';
-import { HexagonLayer } from '@deck.gl/aggregation-layers';
+import { HexagonLayer, HeatmapLayer } from '@deck.gl/aggregation-layers';
 import { DataFilterExtension } from '@deck.gl/extensions';
 import { load, dayToDate, dateToDay } from './data.js';
 import {
@@ -12,6 +12,7 @@ import {
   renderDetect, renderPredict, renderSimulateIdle, renderHouse, renderAct, renderEvidence, renderDossier, renderLead, renderLegend,
 } from './panels.js';
 import { pullLive, replayLive } from './live.js';
+import { startTour, stopTour, tourActive } from './tour.js';
 import './style.css';
 
 const STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
@@ -45,7 +46,7 @@ const S = {
   selected: null, lead: null, alarm: null, house: null, highlight: null,
   plan: { budget: 500000, costs: { ...DEFAULT_COSTS, ...(store('fb-costs') || {}) }, result: null },
   planApproved: !!store('fb-plan-approved'), portfolio: { owner: null, rows: null, inbound: 0 },
-  live: { status: 'off', note: 'connecting', count: 0, jumps: [] },
+  live: { status: 'off', note: 'connecting', count: 0, jumps: [] }, brief: null,
 };
 let D, map, overlay, todayDay, cutoffDay, backtestTop, hitDay, sim, simReady = false, liveEv = null;
 
@@ -92,6 +93,12 @@ function computeHits() {
   }
 }
 
+function lowerDay(d) { // first event index with day >= d
+  let a = 0, b = D.m;
+  while (a < b) { const mid = (a + b) >> 1; if (D.e.day[mid] < d) a = mid + 1; else b = mid; }
+  return a;
+}
+
 // ---------- layers ----------
 
 function layers() {
@@ -105,6 +112,14 @@ function layers() {
   }));
 
   if (v === 'detect') {
+    // Report density, last 60 days: events.bin is sorted by day, so the window is one contiguous slice.
+    const lo = lowerDay(S.day - 60), hi = lowerDay(S.day + 1);
+    out.push(new HeatmapLayer({
+      id: 'density', data: { length: hi - lo, attributes: {
+        getPosition: { value: ePos.subarray(2 * lo, 2 * hi), size: 2 }, getWeight: { value: D.eWeight.subarray(lo, hi), size: 1 } } },
+      radiusPixels: 30, intensity: 1, threshold: 0.04, opacity: Math.max(0, Math.min(0.85, (14.5 - map.getZoom()) / 2.5)),
+      colorRange: [[20, 11, 52], ...HEAT_RGB], aggregation: 'SUM', updateTriggers: { getPosition: [lo, hi], getWeight: [lo, hi] },
+    }));
     out.push(new ScatterplotLayer({
       id: 'reports',
       data: { length: m, attributes: { getPosition: { value: ePos, size: 2 }, getFilterValue: { value: D.eDayF, size: 1 }, getFillColor: { value: D.eColor, size: 4, normalized: true } } },
@@ -179,9 +194,21 @@ function layers() {
       const rows = S.plan.result.rows, vmax = Math.max(...rows.slice(0, 50).map(r => r.protected), 1);
       out.push(new ScatterplotLayer({
         id: 'plan', data: rows, getPosition: r => [b.lon[r.i], b.lat[r.i]], pickable: true,
-        getRadius: r => 30 + 90 * Math.sqrt(Math.min(1, r.protected / vmax)), radiusMinPixels: 2.5, radiusMaxPixels: 16,
+        getRadius: r => 40 + 120 * Math.sqrt(Math.min(1, r.protected / vmax)), radiusMinPixels: 4, radiusMaxPixels: 18,
         getFillColor: r => r.cls === 0 ? [...PRIORITY, 220] : [...ACCENT, 220], stroked: true, getLineColor: [11, 12, 14, 255], lineWidthMinPixels: 1,
         updateTriggers: { getRadius: S.plan.result, getFillColor: S.plan.result }, parameters: { depthTest: false },
+      }));
+    }
+    if (S.act === 'brief' && S.brief) {
+      out.push(new ScatterplotLayer({
+        id: 'plan', data: S.brief.B.rows, getPosition: r => [b.lon[r.i], b.lat[r.i]], pickable: true,
+        getRadius: 90, radiusMinPixels: 9, radiusMaxPixels: 16, getFillColor: [...PRIORITY, 245], stroked: true,
+        getLineColor: [11, 12, 14, 255], lineWidthMinPixels: 1.5, parameters: { depthTest: false }, updateTriggers: { getPosition: S.brief.d },
+      }));
+      out.push(new TextLayer({
+        id: 'brief-rank', data: S.brief.B.rows.map((r, k) => ({ p: [b.lon[r.i], b.lat[r.i]], t: String(k + 1) })), getPosition: d => d.p,
+        getText: d => d.t, getSize: 11, getColor: [11, 12, 14, 255], fontFamily: 'Inter, system-ui, sans-serif', fontWeight: 600,
+        parameters: { depthTest: false }, updateTriggers: { getPosition: S.brief.d },
       }));
     }
     if (S.act === 'portfolio' && S.portfolio.rows) {
@@ -391,7 +418,7 @@ function setPlaying(on) {
 const handlers = {
   alarm: k => pickAlarm(k),
   house: i => openHouse(i),
-  sub: k => { if (S.view === 'predict') { S.predict = k; S.day = k === 'proof' ? cutoffDay : todayDay + 45; } else { S.act = k; if (k === 'plan') computePlan(); } render(); },
+  sub: k => { if (S.view === 'predict') { S.predict = k; S.day = k === 'proof' ? cutoffDay : todayDay + 45; } else { S.act = k; if (k === 'plan') computePlan(); if (k === 'brief') setBrief(S.brief?.d || worstDistrict()); } render(); },
   filter: c => { S.filter = c; render(); },
   hotspot: x => pickHotspot(x),
   budget: v => { S.plan.budget = v; computePlan(false); render(); },
@@ -399,6 +426,9 @@ const handlers = {
   csv: () => exportPlan(),
   approve: () => { S.planApproved = true; store('fb-plan-approved', new Date().toISOString()); render(); },
   owner: o => { setOwner(o); render(); },
+  district: d => { setBrief(d); render(); },
+  copyBrief: async btn => { const t = briefText(S.brief.B); try { await navigator.clipboard.writeText(t); btn.textContent = 'Copied'; } catch { $('brief-text').hidden = false; } },
+  tour: () => runTour(),
   list: id => { S.list = id; S.lead = null; render(); },
   lead: l => pickLead(l),
 };
@@ -409,7 +439,12 @@ function render() {
   if (v === 'detect') renderDetect(D, S, handlers);
   if (v === 'predict') renderPredict(D, S, handlers);
   if (v === 'simulate') S.house ? renderHouse(D, S.house, houseActions()) : renderSimulateIdle(D);
-  if (v === 'act') { if (S.act === 'plan' && !S.plan.result) computePlan(); renderAct(D, S, handlers); }
+  if (v === 'act') {
+    if (S.act === 'plan' && !S.plan.result) computePlan();
+    if (S.act === 'brief' && !S.brief) setBrief(worstDistrict());
+    if (S.brief) S.brief.text = briefText(S.brief.B);
+    renderAct(D, S, handlers);
+  }
   if (v === 'evidence') renderEvidence(D);
   renderLegend(v, S, D);
   drawTimebar();
@@ -612,13 +647,125 @@ function pickLead(l) {
   redraw();
 }
 
+// ---------- council district brief ----------
+
+function districtBounds(d) {
+  const b = D.b, lons = [], lats = [];
+  for (let i = 0; i < D.n; i += 3) if (b.district[i] === d) { lons.push(b.lon[i]); lats.push(b.lat[i]); }
+  lons.sort((x, y) => x - y); lats.sort((x, y) => x - y);
+  const q = (a, f) => a[Math.floor(f * (a.length - 1))];
+  return [[q(lons, 0.02), q(lats, 0.02)], [q(lons, 0.98), q(lats, 0.98)]];
+}
+function computeBrief(d) {
+  const b = D.b, e = D.e;
+  if (!planOrder) computePlan();
+  let n = 0, exp = 0, cert = 0, homes = 0;
+  for (let i = 0; i < D.n; i++) if (b.district[i] === d) { n++; exp += b.risk[i] / 255; cert += b.certified ? b.certified[i] : 0; homes += b.class[i] === 0; }
+  let r30 = 0, r30city = 0;
+  for (let j = lowerDay(todayDay - 29); j < D.m; j++) {
+    if (e.kind[j] === 6 || e.day[j] > todayDay) continue;
+    r30city++; if (e.b[j] >= 0 && b.district[e.b[j]] === d) r30++;
+  }
+  const fair = D.meta.audit?.fairness?.districts.find(x => x.district === d);
+  const fairAfter = D.meta.audit?.fairness_after_rerank?.districts.find(x => x.district === d);
+  const rep = D.hawkes?.reproduction;
+  let r = null;
+  if (rep?.districts?.[d]) {
+    for (let k = rep.months.length - 1; k >= 0; k--) if (!rep.city[k]?.provisional && rep.districts[d][k] != null) { r = { month: rep.months[k], v: rep.districts[d][k] }; break; }
+  }
+  const clusters = (D.alarms?.clusters || []).map((c, k) => ({ c, k })).filter(({ c }) => {
+    const [lon, lat] = c.cells[0]; let best = -1, bd = 1e18;
+    for (let i = 0; i < D.n; i += 2) { const dx = b.lon[i] - lon, dy = b.lat[i] - lat, dd = dx * dx + dy * dy; if (dd < bd) { bd = dd; best = i; } }
+    return b.district[best] === d;
+  });
+  const rows = planOrder.filter(x => b.district[x.i] === d).slice(0, 10);
+  return { d, n, homes, exp, cert, r30, r30city, fair, fairAfter, r, clusters, rows,
+    cost: rows.reduce((a, x) => a + x.cost, 0), prevented: rows.reduce((a, x) => a + x.own + x.spare, 0) };
+}
+function briefText(B) {
+  const m = D.meta, lines = [
+    `# Council District ${B.d}: Firebreak brief, ${m.as_of}`, '',
+    `- Buildings: ${B.n.toLocaleString()} (${B.homes.toLocaleString()} homes)`,
+    `- Property reports, last 30 days: ${B.r30.toLocaleString()} of ${B.r30city.toLocaleString()} citywide`,
+    `- Expected new reports, next 90 days: ${Math.round(B.exp).toLocaleString()}`,
+    B.r ? `- Spread rate R (${B.r.month}): ${B.r.v.toFixed(2)}` : '',
+    `- Certified high-risk buildings (at most 10% expected wrong): ${B.cert}`,
+    B.fair ? `- Model recall here vs city: ${B.fair.recall_ratio.toFixed(2)}x${B.fair.under_served ? ' (under-served before re-ranking)' : ''}` : '',
+    `- Emerging clusters: ${B.clusters.length ? B.clusters.map(({ c, k }) => `#${k + 1} (${c.observed} houses vs ${c.expected.toFixed(1)} expected, ${c.window_days} d)`).join('; ') : 'none'}`,
+    '', '## Next 10 actions (ranked by reports prevented per dollar)', '',
+    '| # | Building | Class | Cost | Own risk | Reports spared nearby |', '|---|---|---|---|---|---|',
+    ...B.rows.map((x, k) => `| ${k + 1} | ${label(x.i)} | ${CLASS[x.cls]} | $${x.cost.toLocaleString()} | ${(x.own * 100).toFixed(0)}% | ${x.spare.toFixed(2)} |`),
+    '', `Total: $${B.cost.toLocaleString()} for about ${B.prevented.toFixed(1)} reports prevented in 90 days. Costs are placeholders.`,
+    'Source: Firebreak pipeline (DCAD 2026, Dallas 311). Nothing has been sent; a human approves each action.',
+  ];
+  return lines.filter(x => x !== '').join('\n').replace('\n## ', '\n\n## ').replace('\n| # |', '\n\n| # |');
+}
+function setBrief(d) {
+  S.brief = { d, B: computeBrief(d) };
+  map.fitBounds(districtBounds(d), { padding: 60, duration: 900 });
+}
+
+// ---------- guided tour ----------
+
+function runTour() {
+  const m = D.meta, net = m.model.network, num = v => Math.round(v).toLocaleString();
+  const top = D.alarms?.clusters?.[0], hot = D.hotspots[0];
+  const steps = [
+    { title: 'Every building in Dallas', ms: 9000, run: () => { setView('detect'); home(); S.day = Math.max(0, todayDay - 365); S.speed = 7; setPlaying(true); },
+      text: () => `${num(m.counts.buildings)} buildings from the appraisal roll and ${num(m.counts.reports)} property reports from 311. The two systems share no IDs; Firebreak joins them by address. The heat is report density over the last 60 days.` },
+    { title: 'Distress clusters, and spreads', ms: 9000, run: () => { setPlaying(false); S.day = todayDay; if (top) pickAlarm(0); else render(); },
+      text: () => top ? `Cluster 1: ${top.observed} houses with a new case in ${top.window_days} days where ${top.expected.toFixed(1)} were expected. A report next door raises a building's odds ${m.edges.block.ratio.toFixed(2)}×; one at another building with the same owner, ${m.edges.owner.ratio.toFixed(2)}×.` : '' },
+    { title: 'The next 90 days', ms: 8000, run: () => { S.predict = 'forecast'; setView('predict'); S.day = todayDay + m.horizon_days; home(); render(); },
+      text: () => `${num(D.expected)} new property reports expected citywide. Height and heat: expected reports per 260 m hex.` },
+    { title: 'Proof on data it never saw', ms: 10000, run: () => { S.predict = 'proof'; setView('predict'); S.day = cutoffDay; render(); S.speed = 3; setPlaying(true); },
+      text: () => `Frozen on ${fmtDate(new Date(m.backtest_cutoff))}. ${pct(net.watch_precision)} of its top ${num(net.watch_list)} got a report within 90 days, against a ${pct(net.base_rate, 1)} base rate. Blue: the report landed.` },
+    { title: 'One building, 400 futures', ms: 15000, run: () => {
+        setPlaying(false); openHouse(hot.i);
+        const t0 = performance.now(), wait = () => { if (!tourActive()) return; if (S.house?.res && !S.house.fb && !S.house.busy) houseActions().firebreaks(); else if (performance.now() - t0 < 9000) setTimeout(wait, 400); };
+        setTimeout(wait, 1500);
+      },
+      text: () => `${esc(hot.name || label(hot.i))}: Firebreak simulates the next 90 days for it and every building within 700 m, then searches for the 3 repairs that spare the most reports at other houses (green).` },
+    { title: 'Budget to work orders', ms: 9000, run: () => { S.act = 'plan'; setView('act'); computePlan(); render(); },
+      text: () => `A ${kusd(S.plan.budget)} budget becomes ${S.plan.result.n} ranked interventions, about ${S.plan.result.reports.toFixed(0)} reports prevented. Ranked by reports per dollar, never by property value. A person approves; nothing is sent.` },
+    { title: 'A brief for every council office', ms: 9000, run: () => { S.act = 'brief'; setView('act'); setBrief(worstDistrict()); render(); },
+      text: () => `District ${S.brief.d}: the same engine, cut to one office's map, with its own next 10 actions and its fairness check. One click copies it.` },
+    { title: 'Every claim, tested', ms: 9000, run: () => { setView('evidence'); home(); },
+      text: () => `Held-out tests, residual checks, a fairness audit by district, and a natural experiment that came back negative, shown rather than hidden. Press T to replay, or explore.` },
+  ];
+  $('tour-btn')?.classList.add('on');
+  startTour(steps, () => { $('tour-btn')?.classList.remove('on'); setPlaying(false); });
+}
+function worstDistrict() {
+  const f = D.meta.audit?.fairness?.districts || [];
+  const u = f.filter(x => x.under_served).sort((a, b) => b.cases - a.cases)[0];
+  return u ? u.district : 7;
+}
+
 // ---------- search ----------
 
 let streetIdx = null;
+const ACTIONS = [
+  { label: 'Detect: what is happening now', key: '1', run: () => setView('detect') },
+  { label: 'Predict: the next 90 days', key: '2', run: () => setView('predict') },
+  { label: 'Simulate: house by house', key: '3', run: () => setView('simulate') },
+  { label: 'Act: budget plan and work orders', key: '4', run: () => { S.act = 'plan'; setView('act'); } },
+  { label: 'Act: council district brief', run: () => { S.act = 'brief'; setView('act'); } },
+  { label: 'Act: portfolio exposure', run: () => { S.act = 'portfolio'; setView('act'); } },
+  { label: 'Evidence: model card', key: '5', run: () => setView('evidence') },
+  { label: 'Predict: replay the backtest', run: () => { S.predict = 'proof'; setView('predict'); S.day = cutoffDay; render(); setPlaying(true); } },
+  { label: 'Start the guided tour', key: 'T', run: () => runTour() },
+  { label: 'Play or pause time', key: 'Space', run: () => range() && $('play').click() },
+  { label: 'Toggle 2D / 3D', key: 'P', run: () => togglePitch() },
+  { label: 'Export work orders (CSV)', run: () => { S.act = 'plan'; setView('act'); exportPlan(); } },
+  { label: 'Copy link to this view', run: () => $('share').click() },
+  { label: 'Fly home', key: 'H', run: () => home() },
+];
 function search(q) {
   q = q.trim().toLowerCase();
+  const acts = ACTIONS.filter(a => !q || a.label.toLowerCase().includes(q)).map(a => ({ kind: 'action', label: a.label, meta: a.key ? a.key : '', a }));
   const out = [];
-  if (q.length < 2 || !D.search) return out;
+  if (q.length < 2 || !D.search) return acts.slice(0, q ? 4 : 14);
+  out.push(...acts.slice(0, 3));
   const s = D.search, b = D.b;
   if (!streetIdx) {
     streetIdx = new Map();
@@ -645,6 +792,7 @@ function search(q) {
 }
 function choose(r) {
   $('q-results').hidden = true; $('q').blur();
+  if (r.kind === 'action') { r.a.run(); return; }
   if (r.kind === 'owner') { S.act = 'portfolio'; setView('act'); setOwner(r.o); render(); return; }
   if (r.kind === 'name') { S.highlight = null; openHouse(r.i); return; }
   S.highlight = r.list.length > 1 ? r.list : null;
@@ -659,9 +807,10 @@ function wireSearch() {
   let results = [], on = 0;
   const show = () => {
     box.hidden = !results.length;
-    box.innerHTML = results.map((r, k) => `<button class="${k === on ? 'on' : ''}" data-k="${k}"><span>${esc(r.label)}</span><small>${r.kind === 'owner' ? 'portfolio · ' : ''}${esc(r.meta)}</small></button>`).join('');
+    box.innerHTML = results.map((r, k) => `<button class="${k === on ? 'on' : ''} ${r.kind}" data-k="${k}"><span><i class="ico ${r.kind}"></i>${esc(r.label)}</span>${r.kind === 'action' ? (r.meta ? `<kbd>${esc(r.meta)}</kbd>` : '') : `<small>${r.kind === 'owner' ? 'portfolio · ' : ''}${esc(r.meta)}</small>`}</button>`).join('');
   };
   q.addEventListener('input', () => { results = search(q.value); on = 0; show(); });
+  q.addEventListener('focus', () => { results = search(q.value); on = 0; show(); });
   q.addEventListener('keydown', ev => {
     if (ev.key === 'ArrowDown') { on = Math.min(results.length - 1, on + 1); show(); ev.preventDefault(); }
     if (ev.key === 'ArrowUp') { on = Math.max(0, on - 1); show(); ev.preventDefault(); }
@@ -700,6 +849,7 @@ async function main() {
   D.eDayF = Float32Array.from(e.day);
   D.eColor = new Uint8Array(m * 4);
   for (let j = 0; j < m; j++) { const c = KIND_RGB[e.kind[j]]; D.eColor.set([c[0], c[1], c[2], e.kind[j] === 6 ? 120 : 220], 4 * j); }
+  D.eWeight = Float32Array.from(e.kind, k => (k === 6 ? 0 : 1));
   D.bColor = new Uint8Array(n * 4);
   for (let i = 0; i < n; i++) D.bColor.set(b.class[i] === 0 ? [92, 97, 108, 80] : [140, 146, 158, 130], 4 * i);
   D.expected = b.risk.reduce((a, r) => a + r / 255, 0);
@@ -734,6 +884,7 @@ async function main() {
 
   $('asof').textContent = `Dallas · data through ${fmtDate(new Date(meta.as_of))}`;
   map = new maplibregl.Map({ container: 'map', style: await pickStyle(), ...HOME, antialias: true, attributionControl: { compact: true } });
+  map.on('style.load', () => restyle(map));
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
   map.addControl(new maplibregl.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-right');
   overlay = new MapboxOverlay({ interleaved: false, layers: [], pickingRadius: 6, getTooltip: tooltip });
@@ -772,6 +923,7 @@ async function main() {
     setPlaying(!S.playing);
   });
   $('pitch').addEventListener('click', togglePitch);
+  $('tour-btn').addEventListener('click', () => (tourActive() ? stopTour() : runTour()));
   $('share').addEventListener('click', async () => {
     const btn = $('share');
     try { await navigator.clipboard.writeText(location.href); btn.textContent = 'Copied'; } catch { btn.textContent = location.hash || '#detect'; }
@@ -780,12 +932,15 @@ async function main() {
   wireSearch();
   window.addEventListener('keydown', ev => {
     const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(ev.target.tagName);
-    if (ev.key === '/' && !typing) { ev.preventDefault(); $('q').focus(); return; }
+    if ((ev.key === '/' && !typing) || (ev.key === 'k' && (ev.metaKey || ev.ctrlKey))) { ev.preventDefault(); $('q').focus(); return; }
     if (typing) return;
     if (ev.key === ' ') { ev.preventDefault(); if (range()) $('play').click(); }
     if (ev.key >= '1' && ev.key <= '5') setView(VIEWS[+ev.key - 1]);
     if (ev.key === 'p' || ev.key === 'P') togglePitch();
+    if (ev.key === 't' || ev.key === 'T') runTour();
+    if (ev.key === 'h' || ev.key === 'H') home();
     if (ev.key === 'Escape') {
+      if (tourActive()) { stopTour(); return; }
       if (!$('detail').hidden) { $('detail').hidden = true; S.selected = null; S.lead = null; redraw(); }
       else if (S.house) houseActions().close();
       else if (S.alarm !== null) { S.alarm = null; render(); }
@@ -799,6 +954,22 @@ async function main() {
 
   // Live 311: reports filed since the snapshot. Falls back to replaying the snapshot's last 48 hours.
   pullLive(D, todayDay).then(L => setLive(L)).catch(err => setLive(replayLive(D, todayDay, err.message)));
+}
+
+// Quiet the basemap so the data carries the colour: near-black land, ink-blue water, hairline roads,
+// grey labels. Applied to whatever layers the CARTO style has; unknown layers are left alone.
+function restyle(m) {
+  const set = (id, prop, v) => { try { m.setPaintProperty(id, prop, v); } catch { /* layer missing */ } };
+  for (const l of m.getStyle().layers || []) {
+    if (l.type === 'background') set(l.id, 'background-color', '#0a0b0d');
+    else if (l.type === 'fill' && /water/.test(l.id)) set(l.id, 'fill-color', '#0c1219');
+    else if (l.type === 'fill' && /building/.test(l.id)) { set(l.id, 'fill-color', '#121317'); set(l.id, 'fill-opacity', 0.6); }
+    else if (l.type === 'fill' && /park|landcover|landuse/.test(l.id)) set(l.id, 'fill-color', '#0d0f11');
+    else if (l.type === 'line' && /road|bridge|tunnel/.test(l.id)) set(l.id, 'line-color', /case/.test(l.id) ? '#0a0b0d' : /mot|trunk|pri/.test(l.id) ? '#24272d' : '#191b20');
+    else if (l.type === 'line' && /waterway/.test(l.id)) set(l.id, 'line-color', '#0f1820');
+    else if (l.type === 'line' && /boundary/.test(l.id)) set(l.id, 'line-color', '#2a2d33');
+    else if (l.type === 'symbol') { set(l.id, 'text-color', /place/.test(l.id) ? '#8a8f99' : '#5d626c'); set(l.id, 'text-halo-color', '#0a0b0d'); set(l.id, 'text-halo-width', 1.2); }
+  }
 }
 
 function togglePitch() {

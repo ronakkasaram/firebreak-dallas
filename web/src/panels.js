@@ -288,7 +288,7 @@ export const DEFAULT_COSTS = { home: 15000, multifamily: 20000, commercial: 2000
 
 export function renderAct(D, S, h) {
   const sub = S.act;
-  const tabs = `<div class="chips" id="act-sub">${[['plan', 'City plan'], ['portfolio', 'Portfolio'], ['investor', 'Acquisition leads']]
+  const tabs = `<div class="chips" id="act-sub">${[['plan', 'Budget plan'], ['brief', 'District brief'], ['portfolio', 'Portfolio'], ['investor', 'Acquisition leads']]
     .map(([k, t]) => `<button class="chip ${sub === k ? 'on' : ''}" data-k="${k}">${t}</button>`).join('')}</div>`;
   let body = '';
   if (sub === 'plan') {
@@ -318,6 +318,35 @@ export function renderAct(D, S, h) {
           the budget to the richest blocks, so value is reported, not optimised: 0.9% of single-family home value within
           200 m per case avoided (Immergluck & Smith 2006). Per $100K: reports prevented for every $100,000 spent.
           Nothing is sent from here.</p>
+      </div>`;
+  } else if (sub === 'brief' && S.brief) {
+    const B = S.brief.B, f = B.fair;
+    const districts = (D.meta.audit?.fairness?.districts || []).map(x => x.district);
+    body = `
+      <div class="pane">
+        <p>The same engine cut to one council office: what is happening in its district, what comes next, and the ten
+          actions that prevent the most reports per dollar. Generated from the pipeline; copy it into an email or a
+          council memo.</p>
+        <div class="inline"><select id="district" class="btn" aria-label="Council district">${districts.map(d => `<option value="${d}" ${d === B.d ? 'selected' : ''}>Council District ${d}</option>`).join('')}</select>
+          <button class="btn primary" id="brief-copy">Copy brief</button></div>
+        <div class="kpis">
+          ${kpi(num(B.r30), 'property reports, last 30 days', `${pct(B.r30 / Math.max(B.r30city, 1), 1)} of the city · ${num(B.n)} buildings`)}
+          ${kpi(num(Math.round(B.exp)), 'new reports expected, 90 days', 'sum of each building\'s risk')}
+          ${kpi(B.r ? B.r.v.toFixed(2) : '—', `spread rate R${B.r ? ', ' + B.r.month : ''}`, B.r ? `each problem becomes ${(1 / (1 - B.r.v)).toFixed(2)} reports` : '')}
+          ${kpi(f ? f.recall_ratio.toFixed(2) + '<small>×</small>' : '—', 'model recall here vs city', f ? (f.under_served ? `under-served; ${B.fairAfter ? B.fairAfter.recall_ratio.toFixed(2) + '× after re-ranking' : ''}` : 'within the four-fifths rule') : '')}
+        </div>
+        <ul class="rows">
+          <li><span>Certified high-risk buildings</span><b>${num(B.cert)}</b></li>
+          <li><span>Emerging clusters in the district</span><b>${B.clusters.length ? B.clusters.map(({ k }) => '#' + (k + 1)).join(', ') : 'none'}</b></li>
+          <li class="total"><span>Next 10 actions</span><b>${kusd(B.cost)} · ${B.prevented.toFixed(1)} reports prevented</b></li>
+        </ul>
+        <div class="tw"><table class="t"><thead><tr><th>#</th><th>Building</th><th class="r">Own</th><th class="r">Spared</th><th class="r">Cost</th></tr></thead><tbody>
+          ${B.rows.map((r, k) => `<tr class="pick" data-b="${r.i}"><td>${k + 1}</td><td>${esc(D.label(r.i))}<small>${CLASS[r.cls]}</small></td>
+            <td class="r">${pct(r.own)}</td><td class="r">${r.spare.toFixed(2)}</td><td class="r">${kusd(r.cost)}</td></tr>`).join('')}
+        </tbody></table></div>
+        <textarea id="brief-text" class="brief-text" readonly hidden>${esc(S.brief.text || '')}</textarea>
+        <p class="note">Costs are the placeholders from the budget plan. Rankings use reports prevented per dollar, so a
+          district's list does not depend on its property values.</p>
       </div>`;
   } else if (sub === 'portfolio') {
     const owners = D.search?.owners || [];
@@ -357,6 +386,9 @@ export function renderAct(D, S, h) {
     $('panel').querySelectorAll('[data-cost]').forEach(el => { el.onchange = () => h.cost(el.dataset.cost, +el.value); });
     $('plan-csv').onclick = h.csv;
     wireHold($('panel').querySelector('.hold'), h.approve);
+  } else if (sub === 'brief') {
+    if ($('district')) $('district').onchange = ev => h.district(+ev.target.value);
+    if ($('brief-copy')) $('brief-copy').onclick = ev => h.copyBrief(ev.currentTarget);
   } else if (sub === 'portfolio') {
     $('owner').onchange = ev => h.owner(+ev.target.value || null);
   } else {
@@ -477,6 +509,19 @@ export function renderEvidence(D) {
       </ul>
     </div>` : ''}
     <div class="pane">
+      <h3>Runs on any city</h3>
+      <p class="note">The pipeline needs two inputs: a property roll with locations (any county appraisal district) and a
+        time-stamped event log with coordinates. Dallas 311 comes from Socrata; more than 30 US cities publish the
+        same kind of log through the Open311 GeoReport v2 standard. Swap the two loaders and every view, test and
+        audit here reruns unchanged. Inside a single campus, the nodes become assets and the events become work
+        orders and alarms.</p>
+      <ul class="rows">
+        <li><span>Full rebuild, 241,588 buildings, laptop</span><b>about 45 min</b></li>
+        <li><span>One building simulated in the browser</span><b>400 futures, about 1 s</b></li>
+        <li><span>Data shipped to the browser</span><b>${(D.meta.buildings_layout.reduce((a, c) => Math.max(a, c.offset + c.length * ({ float32: 4, uint32: 4, int32: 4, uint16: 2 }[c.dtype] || 1)), 0) / 1e6).toFixed(1)} MB of buildings</b></li>
+      </ul>
+    </div>
+    <div class="pane">
       <h3>Limits</h3>
       <p class="note">311 measures what people report, not what exists, so quiet neighbourhoods can be under-counted. The
         dollar figures use published rates (Immergluck & Smith 2006; Q3 2026 DFW rents) and placeholder repair costs,
@@ -556,7 +601,7 @@ export function renderLegend(view, S, D) {
   const src = `<div class="src">Dallas 311 · DCAD 2026 · as of ${D.meta.as_of}</div>`;
   const kinds = [0, 1, 2, 4, 5].map(k => `<div class="row"><i class="sw dot" style="background:${KIND_HEX[k]}"></i>${KIND_NAME[k]}</div>`).join('');
   const html = {
-    detect: `<h4>311 property reports, last 60 days</h4>${kinds}<div class="row"><i class="sw" style="border:1.5px solid #fcffa4"></i>emerging cluster (150 m cells)</div>`,
+    detect: `<h4>311 property reports, last 60 days</h4>${ramp}<div class="breaks"><span>sparse</span><span>report density</span><span>dense</span></div><div style="height:6px"></div>${kinds}<div class="row"><i class="sw" style="border:1.5px solid #fcffa4"></i>emerging cluster (150 m cells)</div>`,
     predict: S.predict === 'proof'
       ? `<h4>Backtest from ${D.meta.backtest_cutoff}</h4><div class="row"><i class="sw" style="background:var(--open)"></i>flagged, no report yet</div><div class="row"><i class="sw" style="background:var(--hit)"></i>flagged, report landed</div>`
       : S.predict === 'certified'
@@ -564,8 +609,13 @@ export function renderLegend(view, S, D) {
         : `<h4>Expected new reports, 90 days</h4>${ramp}<div class="breaks"><span>fewer</span><span>per 260 m hex</span><span>more</span></div><div class="row" style="margin-top:6px"><i class="sw" style="background:#fca50a"></i>priority intervention</div>`,
     simulate: `<h4>Chance of a report by the slider date</h4>${ramp}<div class="breaks"><span>0%</span><span>20%</span><span>40%+</span></div>
       <div class="row" style="margin-top:6px"><i class="sw" style="background:var(--stab)"></i>stabilized</div><div class="row"><i class="sw" style="background:#fca50a;height:2px"></i>trigger arc: earlier report → the report it set off</div>`,
-    act: `<h4>${S.act === 'plan' ? 'Planned interventions' : S.act === 'portfolio' ? 'Portfolio buildings' : 'Acquisition leads'}</h4>
-      <div class="row"><i class="sw dot" style="background:#8ab4ff"></i>${S.act === 'portfolio' ? 'owned building (size = risk)' : 'selected building'}</div>`,
+    act: S.act === 'plan'
+      ? `<h4>Budget plan</h4><div class="row"><i class="sw dot" style="background:#fca50a"></i>home in the plan</div><div class="row"><i class="sw dot" style="background:#8ab4ff"></i>apartment or commercial building</div><div class="breaks" style="margin-top:4px"><span>size: home value protected nearby</span></div>`
+      : S.act === 'brief'
+        ? `<h4>District brief</h4><div class="row"><i class="sw dot" style="background:#fca50a"></i>next 10 actions, numbered by rank</div>`
+        : S.act === 'portfolio'
+          ? `<h4>Portfolio buildings</h4>${ramp}<div class="breaks"><span>own risk</span><span>share from neighbours</span><span>outside risk</span></div><div class="row" style="margin-top:4px">size: 90-day risk</div>`
+          : `<h4>Acquisition leads</h4><div class="row"><i class="sw dot" style="background:#e69f00"></i>lead on the selected list</div>`,
     evidence: `<h4>Recall by council district</h4>${ramp}<div class="breaks"><span>under-served</span><span>city</span><span>over-served</span></div>`,
   }[view];
   $('legend').innerHTML = html + src;
