@@ -28,6 +28,8 @@ Firebreak is a console that goes from detecting a problem to acting on it, in fi
 Built for the people who act on it:
 
 - **Every building gets a Distress Factor** from 1 to 10, like a flood factor, plus a two-year timeline of its reports.
+- **The hidden network is drawn on the map:** arcs from each building with a report this year to the same company's other buildings.
+- **A watchlist:** follow any building, and Firebreak flags it when a new live 311 report lands at it or nearby.
 - **A stress test** injects hypothetical reports at any building and shows the cascade they set off.
 - **Each council district gets a one-page brief** and tomorrow's crew route, planned with nearest-neighbour and 2-opt and handed off to Google Maps.
 - **Property owners see the share of their risk that comes from buildings they don't own**, and which outside buildings to fix or buy first.

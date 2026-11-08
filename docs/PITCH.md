@@ -24,8 +24,8 @@ Booth checklist:
 
 ## The safety net: press T
 
-The **Tour** button (or `T`) runs the whole demo by itself in about 80 seconds: Detect, the cluster alarm,
-the 90-day forecast, the backtest replay, one building simulated with its firebreaks, the budget plan, a
+The **Tour** button (or `T`) runs the whole demo by itself in about 90 seconds: Detect, the cluster alarm,
+the hidden same-owner network, the 90-day forecast, the backtest replay, one building simulated with its firebreaks, the budget plan, a
 council district brief and the Evidence tab. Every caption is read from the data files. Talk over it, pause
 it (the pause button), step with ‹ ›, or press Esc to take over. If a judge arrives mid-explanation, press T.
 
@@ -91,6 +91,8 @@ Add these between steps 3 and 4:
 | "What's in it for a property owner?" | Act > Portfolio (search a company) | "Share of their risk coming from buildings they don't own, and the outside buildings to fix or buy first." |
 | "And the wholesale angle?" | Act > Acquisition leads, open a lead | "Natural buyers next door: the portfolios that lose most if this house tips. A drive-for-dollars loop plans the route." |
 | "Is it real time?" | The live dot, top bar | "New 311 reports since our snapshot, matched to buildings and re-scored." |
+| "Show me the hidden dependency." | Detect, press `N` | "Each arc runs from a building with a report this year to another building with the same owner. That link raises the odds 1.20×. About 5,900 buildings sit on one." |
+| "Can I keep an eye on a building?" | Open a building, press Follow | "It's ringed on the map, and the Detect panel flags it when a new 311 report lands at it or near it." |
 
 ## How it maps to what CBRE asked for
 

@@ -94,6 +94,8 @@ With no house picked, arcs link each report since mid-2026 to the earlier report
 The console follows one workflow, keys 1 to 5. The presenter guide, with scripts, numbers and hard questions, is in [docs/PITCH.md](docs/PITCH.md).
 
 1. **Detect.** Every Dallas property report, played back over two years. Emerging clusters from an expectation-based subset scan, the live 311 feed since the snapshot, and the spread rate R by month and council district.
+   - **Hidden network** (`N`): arcs from each building with a report this year to the same company's other buildings, the 1.20× same-owner link drawn on the map.
+   - **Watchlist:** press Follow on any building. Followed buildings are ringed on the map, and the Detect panel flags the ones that new 311 reports touch. It is kept in the browser only.
 2. **Predict.** The 90-day forecast terrain, the backtest replay (model frozen on Jul 1, 2026), the certified list (conformal selection, at most 10% expected wrong) and the calibration chart. Priority interventions open a dossier with a response plan.
 3. **Simulate.** Click any building to open its report:
    - its Distress Factor (1 to 10) and a two-year timeline;

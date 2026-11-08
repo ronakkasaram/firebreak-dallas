@@ -46,7 +46,7 @@ const S = {
   selected: null, lead: null, alarm: null, house: null, highlight: null,
   plan: { budget: 500000, costs: { ...DEFAULT_COSTS, ...(store('fb-costs') || {}) }, result: null },
   planApproved: !!store('fb-plan-approved'), portfolio: { owner: null, rows: null, inbound: 0 },
-  live: { status: 'off', note: 'connecting', count: 0, jumps: [] }, brief: null, route: null,
+  live: { status: 'off', note: 'connecting', count: 0, jumps: [] }, brief: null, route: null, network: false,
 };
 let introClose = null;
 let D, map, overlay, todayDay, cutoffDay, backtestTop, hitDay, sim, simReady = false, liveEv = null;
@@ -135,6 +135,12 @@ function layers() {
       filterRange: [S.day - 60, S.day], filterSoftRange: [S.day - 20, S.day],
       parameters: { depthTest: false }, updateTriggers: { filterRange: S.day },
     }));
+    if (S.network && D.b.owner) {
+      const net = ownerNetwork();
+      out.push(new ArcLayer({ id: 'owner-net', data: net.arcs, getSourcePosition: a => [b.lon[a.s], b.lat[a.s]], getTargetPosition: a => [b.lon[a.t], b.lat[a.t]],
+        getSourceColor: [...PRIORITY, 150], getTargetColor: a => [...ACCENT, 40 + 150 * Math.min(1, a.r * 2)], getWidth: 1, widthMinPixels: 0.5, getHeight: 0.25,
+        greatCircle: false, parameters: { depthTest: false }, pickable: true }));
+    }
     if (D.alarms && S.day >= todayDay - 1) {
       const cells = D.alarms.clusters.flatMap((c, k) => c.cells.map(p => ({ p, k })));
       out.push(new ScatterplotLayer({
@@ -267,6 +273,13 @@ function layers() {
       id: 'live', data: liveEv, getPosition: d => [d.lon, d.lat], getRadius: 60, radiusMinPixels: 4, radiusMaxPixels: 10,
       getFillColor: d => [...KIND_RGB[d.kind], 255], stroked: true, getLineColor: [255, 255, 255, 255], lineWidthMinPixels: 1.5,
       parameters: { depthTest: false }, pickable: true,
+    }));
+  }
+  const fw = D.n ? watched().map(x => x.i) : [];
+  if (fw.length) {
+    out.push(new ScatterplotLayer({
+      id: 'watch', data: fw, getPosition: i => [b.lon[i], b.lat[i]], getRadius: 34, radiusMinPixels: 6, radiusMaxPixels: 14,
+      filled: false, stroked: true, getLineColor: [255, 255, 255, 220], lineWidthMinPixels: 1.25, parameters: { depthTest: false }, pickable: true,
     }));
   }
   if (S.highlight?.length) {
@@ -459,6 +472,8 @@ const handlers = {
   district: d => { setBrief(d); render(); },
   copyBrief: async btn => { const t = briefText(S.brief.B); try { await navigator.clipboard.writeText(t); btn.textContent = 'Copied'; } catch { $('brief-text').hidden = false; } },
   tour: () => runTour(),
+  unwatch: i => { toggleWatch(i); render(); redraw(); },
+  network: () => { S.network = !S.network; if (S.network) { ownerNetwork(); home(); } render(); },
   route: n => { if (S.act === 'brief') setRoute('inspect', S.brief.B.allRows.slice(0, n).map(x => x.i)); render(); },
   d4d: () => {
     const L = D.lists.lists.find(l => l.id === S.list) || D.lists.lists[0], byZip = new Map();
@@ -478,7 +493,7 @@ const handlers = {
 function render() {
   const v = S.view;
   document.querySelectorAll('#views button').forEach(x => x.classList.toggle('on', x.dataset.view === v));
-  if (v === 'detect') renderDetect(D, S, handlers);
+  if (v === 'detect') { S.watch = watchRows(); renderDetect(D, S, handlers); }
   if (v === 'predict') renderPredict(D, S, handlers);
   if (v === 'simulate') S.house ? renderHouse(D, S.house, houseActions()) : renderSimulateIdle(D);
   if (v === 'act') {
@@ -558,6 +573,8 @@ function houseActions() {
       H.fb = null; runSim();
     },
     clear: () => { S.house.stab = []; S.house.fb = null; runSim(); },
+    watching: i => isWatched(i),
+    watch: i => { toggleWatch(i); renderHouse(D, S.house, houseActions()); redraw(); },
     shock: n => { S.house.shock = n; runSim(); },
     firebreaks: () => {
       const H = S.house; H.busy = true; H.status = 'Searching for firebreaks…';
@@ -795,6 +812,61 @@ function naturalBuyers(i) {
   return [...by.values()].sort((x, y) => y.w - x.w).slice(0, 3).map(x => ({ ...x, label: D.search.owners[x.o - 1].label, total: D.search.owners[x.o - 1].buildings }));
 }
 
+// ---------- the hidden network: same-owner links ----------
+// For every company portfolio with a property report in the last year, an arc from the building that had
+// the report to each of the owner's other buildings: the "same owner" dependency measured at 1.20x.
+function ownerNetwork() {
+  if (D.ownerNet) return D.ownerNet;
+  const b = D.b, e = D.e, src = new Map(), members = new Map();
+  for (let i = 0; i < D.n; i++) { const o = b.owner[i]; if (o) (members.get(o) || members.set(o, []).get(o)).push(i); }
+  for (let j = lowerDay(todayDay - 365); j < D.m; j++) {
+    const g = e.b[j]; if (g < 0 || e.kind[j] === 6) continue;
+    const o = b.owner[g]; if (o) src.set(o, g);
+  }
+  const arcs = [];
+  for (const [o, g] of src) {
+    const others = members.get(o).filter(i => i !== g);
+    others.sort((x, y) => b.risk[y] - b.risk[x]);
+    for (const t of others.slice(0, 6)) arcs.push({ s: g, t, o, r: b.risk[t] / 255 });
+  }
+  arcs.sort((x, y) => y.r - x.r);
+  const links = [...src.keys()].reduce((n, o) => n + members.get(o).length - 1, 0);
+  return (D.ownerNet = { arcs: arcs.slice(0, 900), owners: src.size, links });
+}
+
+// ---------- watchlist ----------
+// Followed buildings are kept in this browser only (localStorage). Every number on a row is recomputed from the
+// data files and the live feed each time; nothing about a followed building is stored except when it was followed.
+const WATCH = 'fb-watch';
+function watched() {
+  const w = store(WATCH) || {};
+  return Object.entries(w).map(([i, x]) => ({ i: +i, ...x })).filter(x => x.i < D.n && label(x.i) === x.label);
+}
+const isWatched = i => !!(store(WATCH) || {})[i];
+function toggleWatch(i) {
+  const w = store(WATCH) || {};
+  if (w[i]) delete w[i]; else w[i] = { label: label(i), at: dayToDate(D.meta, todayDay).toISOString().slice(0, 10) };
+  store(WATCH, w);
+}
+function watchRows() {
+  const list = watched(); if (!list.length) return [];
+  const rows = new Map(list.map(x => [x.i, { ...x, n30: 0, last: -1, live: 0, liveN: 0 }]));
+  const e = D.e;
+  for (let j = lowerDay(todayDay - 365); j < D.m; j++) {
+    if (e.kind[j] === 6) continue;
+    const r = rows.get(e.b[j]); if (!r) continue;
+    if (todayDay - e.day[j] < 30) r.n30++;
+    r.last = e.day[j];
+  }
+  const L = S.live;
+  if (L.status === 'on') {
+    for (const [i, d] of L.jumps.all || []) { const r = rows.get(i); if (r) r.live = d; }
+    for (const ev of L.events || []) { const r = rows.get(ev.b); if (r) r.liveN++; }
+  }
+  for (const r of rows.values()) r.lastDate = r.last >= 0 ? fmtDate(dayToDate(D.meta, r.last)) : null;
+  return [...rows.values()].sort((x, y) => (y.liveN - x.liveN) || (y.live - x.live) || (y.n30 - x.n30) || (D.b.risk[y.i] - D.b.risk[x.i]));
+}
+
 // ---------- council district brief ----------
 
 function districtBounds(d) {
@@ -865,7 +937,9 @@ function runTour() {
       text: () => `${num(m.counts.buildings)} buildings from the appraisal roll and ${num(m.counts.reports)} property reports from 311. The two systems share no IDs; Firebreak joins them by address. The heat is report density over the last 60 days.` },
     { title: 'Distress clusters, and spreads', ms: 9000, run: () => { setPlaying(false); S.day = todayDay; if (top) pickAlarm(0); else render(); },
       text: () => top ? `Cluster 1: ${top.observed} houses with a new case in ${top.window_days} days where ${top.expected.toFixed(1)} were expected. A report next door raises a building's odds ${m.edges.block.ratio.toFixed(2)}×; one at another building with the same owner, ${m.edges.owner.ratio.toFixed(2)}×.` : '' },
-    { title: 'The next 90 days', ms: 8000, run: () => { S.predict = 'forecast'; setView('predict'); S.day = todayDay + m.horizon_days; home(); render(); },
+    { title: 'The hidden network', ms: 9000, run: () => { S.alarm = null; S.network = true; ownerNetwork(); home(); render(); },
+      text: () => `${num(D.ownerNet.links)} buildings share an owner with a building that had a report this year, across ${num(D.ownerNet.owners)} company portfolios. A report at one raises the others' odds ${m.edges.owner.ratio.toFixed(2)}× (pooled over 4 test quarters). These are the dependencies CBRE's brief calls undetectable.` },
+    { title: 'The next 90 days', ms: 8000, run: () => { S.network = false; S.predict = 'forecast'; setView('predict'); S.day = todayDay + m.horizon_days; home(); render(); },
       text: () => `${num(D.expected)} new property reports expected citywide. Height and heat: expected reports per 260 m hex.` },
     { title: 'Proof on data it never saw', ms: 10000, run: () => { S.predict = 'proof'; setView('predict'); S.day = cutoffDay; render(); S.speed = 3; setPlaying(true); },
       text: () => `Frozen on ${fmtDate(new Date(m.backtest_cutoff))}. ${pct(net.watch_precision)} of its top ${num(net.watch_list)} got a report within 90 days, against a ${pct(net.base_rate, 1)} base rate. Blue: the report landed.` },
@@ -913,6 +987,8 @@ const ACTIONS = [
   { label: 'Act: portfolio exposure', run: () => { S.act = 'portfolio'; setView('act'); } },
   { label: 'Evidence: model card', key: '5', run: () => setView('evidence') },
   { label: 'Predict: replay the backtest', run: () => { S.predict = 'proof'; setView('predict'); S.day = cutoffDay; render(); setPlaying(true); } },
+  { label: 'Detect: show the hidden owner network', key: 'N', run: () => { setView('detect'); handlers.network(); } },
+  { label: 'Detect: my watchlist', run: () => { setView('detect'); requestAnimationFrame(() => [...document.querySelectorAll('#panel .pane')].find(p => p.innerText.startsWith('Watchlist'))?.scrollIntoView({ behavior: 'smooth' })); } },
   { label: 'Start the guided tour', key: 'T', run: () => runTour() },
   { label: 'Play or pause time', key: 'Space', run: () => range() && $('play').click() },
   { label: 'Toggle 2D / 3D', key: 'P', run: () => togglePitch() },
@@ -993,7 +1069,7 @@ function setLive(L) {
     liveEv = L.events;
     if (sim) sim.postMessage({ type: 'add', ev: L.events.filter(x => x.b >= 0 && x.kind !== 6) });
   }
-  if (S.view === 'detect') renderDetect(D, S, handlers);
+  if (S.view === 'detect') { S.watch = watchRows(); renderDetect(D, S, handlers); }
   redraw();
 }
 
@@ -1102,6 +1178,7 @@ async function main() {
     if (ev.key === ' ') { ev.preventDefault(); if (range()) $('play').click(); }
     if (ev.key >= '1' && ev.key <= '5') setView(VIEWS[+ev.key - 1]);
     if (ev.key === 'p' || ev.key === 'P') togglePitch();
+    if (ev.key === 'n' || ev.key === 'N') { if (S.view !== 'detect') setView('detect'); handlers.network(); }
     if (ev.key === 't' || ev.key === 'T') runTour();
     if (ev.key === 'h' || ev.key === 'H') home();
     if (ev.key === 'Escape') {
@@ -1166,6 +1243,8 @@ function tooltip(info) {
     return box(`<b>${esc(label(g))}</b><br>${pct((r.withS || r.base).pBy[t * r.N + object])} chance of a report by day ${t}`);
   }
   if ((id === 'route-stops') && object !== undefined) { const k = S.route.order.indexOf(object); return box(`<b>Stop ${k + 1}</b><br>${esc(label(object))}`); }
+  if (id === 'watch') return box(`<b>Following</b><br>${esc(label(object))}`);
+  if (id === 'owner-net' && object) return box(`<b>${esc(D.search.owners[object.o - 1].label)}</b><br>report at ${esc(label(object.s))}<br>→ ${esc(label(object.t))}, ${pct(object.r)} risk`);
   if (id === 'pusher-dots' && object) return box(`<b>${esc(label(object.i))}</b><br>pushes on ${object.n} of this portfolio's buildings · +${object.v.toFixed(3)} expected reports`);
   if ((id === 'plan' || id === 'portfolio') && object) return box(`<b>${esc(label(object.i))}</b><br>${CLASS[b.class[object.i]]} · ${pct(b.risk[object.i] / 255)} risk`);
   if (id === 'certified' && object !== undefined) return box(`<b>${esc(label(object))}</b><br>certified · calibrated ${pct(b.risk_lo[object] / 255)}–${pct(b.risk_hi[object] / 255)}`);

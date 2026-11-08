@@ -272,3 +272,36 @@ a.btn { display: inline-flex; align-items: center; text-decoration: none; }
 #q-results button { align-items: center; }
 #q-results button span { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #q-results button small, #q-results button kbd { flex: none; }
+
+/* ---------- switch ---------- */
+.net-toggle { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 6px; cursor: pointer; background: var(--raised); }
+.net-toggle:hover { border-color: var(--muted); }
+.net-toggle b { display: block; font-size: 13px; font-weight: 600; }
+.net-toggle small { display: block; font-size: 11px; color: var(--muted); }
+.sw-track { width: 28px; height: 16px; border-radius: 8px; background: var(--line-2); position: relative; transition: background .15s; }
+.sw-track i { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--text-2); transition: transform .15s; }
+.net-toggle.on { border-color: rgba(138,180,255,.5); }
+.net-toggle.on .sw-track { background: var(--accent); }
+.net-toggle.on .sw-track i { transform: translateX(12px); background: var(--bg); }
+
+/* ---------- watchlist ---------- */
+.ph-btns { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+.btn.follow::before { content: "☆"; margin-right: 5px; }
+.btn.follow.on { border-color: rgba(255,255,255,.55); color: var(--text); }
+.btn.follow.on::before { content: "★"; }
+tr.flag td:first-child { box-shadow: inset 2px 0 0 var(--priority, #fca50a); }
+b.hot { color: #fca50a; font-weight: 600; }
+button.x { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 14px; padding: 0 4px; line-height: 1; }
+button.x:hover { color: var(--text); }
+table.watch td.r { white-space: nowrap; }
+
+/* ---------- phone width ---------- */
+@media (max-width: 700px) {
+  #q-results { min-width: 0; width: calc(100vw - 32px); }
+  .search kbd, #tour-btn kbd { display: none; }
+  .legend { display: none; }
+  .tour { left: 8px; right: 8px; transform: none; width: auto; bottom: 108px; }
+  .seg button { padding: 0 8px; }
+  .seg .n { display: none; }
+  .ph h2 { font-size: 16px; }
+}

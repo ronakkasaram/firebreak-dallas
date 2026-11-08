@@ -61,13 +61,15 @@ function jumps(D, events) {
       w.kinds.add(KIND_LABEL[ev.kind]);
     });
   }
-  return [...add.entries()].sort((x, y) => y[1] - x[1]).slice(0, 25).map(([i, d]) => {
+  const top = [...add.entries()].sort((x, y) => y[1] - x[1]).slice(0, 25).map(([i, d]) => {
     const w = why.get(i);
     const parts = [];
     if (w.self) parts.push(`${w.self} new here`);
     if (w.nb) parts.push(`${w.nb} new within ${Math.round(w.dmin)}–${p.radius_m} m`);
     return { i, d, label: D.label(i), why: `${parts.join(', ')} · ${[...w.kinds].join(', ')}` };
   });
+  top.all = add; // every building's jump, for the watchlist
+  return top;
 }
 
 function parseLoc(x) {

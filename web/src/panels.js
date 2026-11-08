@@ -131,6 +131,7 @@ export function renderDetect(D, S, h) {
           : kpi(num(live.count), 'reports in the last 48 h', 'replay: live feed unreachable here')}
       </div>
     </div>
+    ${watchPane(D, S, live)}
     ${live.status === 'on' && live.jumps.length ? `<div class="pane">
       <div class="sec-h"><h3>${live.mode === 'live' ? 'Outlook raised by new reports' : 'Outlook raised by the last 48 hours'}</h3><small>expected extra reports, 90 days</small></div>
       <div class="tw"><table class="t"><thead><tr><th>Building</th><th class="r">+ reports</th></tr></thead><tbody>
@@ -158,7 +159,10 @@ export function renderDetect(D, S, h) {
         are provisional.</p>
     </div>` : ''}
     <div class="pane">
+      
       <div class="sec-h"><h3>The claim we tested</h3><small>CBRE brief</small></div>
+      <div class="net-toggle ${S.network ? 'on' : ''}" id="net-toggle" role="switch" aria-checked="${S.network}" tabindex="0">
+        <span class="sw-track"><i></i></span><span><b>Show the hidden network</b><small>${S.network && D.ownerNet ? `${num(D.ownerNet.links)} buildings share an owner with one of this year's reports (${num(D.ownerNet.owners)} portfolios). Showing the ${num(D.ownerNet.arcs.length)} riskiest links.` : 'arcs from every building with a report to the same owner\'s other buildings'}</small></span></div>
       <div class="claim">"Commercial property networks are too fragmented to detect hidden dependencies."</div>
       <div>${edges.map(([k, e]) => `<div class="edge"><span>${k === 'block' ? 'Next door' : k === 'owner' ? 'Same owner' : 'Pipes and streets'}</span>
         <b class="${e.ratio >= 1.1 ? 'yes' : 'no'}">${e.ratio.toFixed(2)}×</b><small>${esc(e.edge)}. ${num(e.exposed_buildings)} buildings with no prior report, 4 test periods.</small></div>`).join('')}</div>
@@ -166,7 +170,25 @@ export function renderDetect(D, S, h) {
         and streets are not, and saying so is part of the answer.</p>
     </div>`;
   $('panel').querySelectorAll('tr[data-a]').forEach(tr => { tr.onclick = () => h.alarm(+tr.dataset.a); });
+  const nt = $('net-toggle'); if (nt) { nt.onclick = h.network; nt.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); h.network(); } }; }
   $('panel').querySelectorAll('tr[data-b]').forEach(tr => { tr.onclick = () => h.house(+tr.dataset.b); });
+  $('panel').querySelectorAll('tr[data-w]').forEach(tr => { tr.onclick = ev => { const u = ev.target.closest('[data-unw]'); if (u) { ev.stopPropagation(); h.unwatch(+u.dataset.unw); } else h.house(+tr.dataset.w); }; });
+}
+
+function watchPane(D, S, live) {
+  const W = S.watch || [];
+  if (!W.length) return `<div class="pane"><div class="sec-h"><h3>Watchlist</h3><small>kept in this browser</small></div>
+    <p class="note">Open any building and press Follow. Followed buildings are ringed on the map, and new 311 reports at or near them show up here first.</p></div>`;
+  const hits = W.filter(w => w.liveN || w.live > 0.001).length;
+  return `<div class="pane">
+    <div class="sec-h"><h3>Watchlist</h3><small>${num(W.length)} followed${live.status === 'on' ? ` · <b class="${hits ? 'hot' : ''}">${num(hits)} touched ${live.mode === 'live' ? 'since the snapshot' : 'in the last 48 h'}</b>` : ''}</small></div>
+    <div class="tw"><table class="t watch"><thead><tr><th>Building</th><th class="r">Factor</th><th class="r">30 d</th><th class="r">Live</th><th></th></tr></thead><tbody>
+    ${W.map(w => `<tr class="pick ${w.liveN || w.live > 0.001 ? 'flag' : ''}" data-w="${w.i}"><td>${esc(D.label(w.i))}<small>${w.lastDate ? `last report ${w.lastDate}` : 'no report in the last year'} · since ${esc(w.at)}</small></td>
+      <td class="r">${factorOf(D.b.risk[w.i] / 255)}</td><td class="r">${w.n30 || '—'}</td>
+      <td class="r">${w.liveN ? `${w.liveN} new` : w.live > 0.001 ? `+${w.live.toFixed(3)}` : '—'}</td>
+      <td class="r"><button class="x" data-unw="${w.i}" aria-label="Unfollow">×</button></td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="note">Factor: Distress Factor today. 30 d: reports in the last 30 days. Live: new reports at the building, or expected extra reports over 90 days from new reports nearby.</p></div>`;
 }
 
 // ---------- 2. Predict ----------
@@ -261,7 +283,7 @@ export function renderHouse(D, H, a) {
   const title = hot ? (hot.name || shownAddr(hot)) : D.label(i);
   $('panel').innerHTML = `
     <div class="pane">
-      <div class="ph"><h2>${esc(title)}</h2><button class="close" id="h-close">Back to overview (Esc)</button></div>
+      <div class="ph"><h2>${esc(title)}</h2><span class="ph-btns"><button class="btn follow ${a.watching(i) ? 'on' : ''}" id="h-watch" aria-pressed="${a.watching(i)}">${a.watching(i) ? 'Following' : 'Follow'}</button><button class="close" id="h-close" title="Back to overview (Esc)">Back</button></span></div>
       <p class="t2">${CLASS[b.class[i]]} · council district ${b.district?.[i] || '—'} · DCAD value ${kusd(b.value[i])} ·
         ${b.reports_365[i]} reports in the last year</p>
       ${factorMeter(b.risk[i] / 255)}
@@ -322,6 +344,7 @@ export function renderHouse(D, H, a) {
         repairs, a code fix, or a purchase and rehab. Homesteads get repair help first.</p>
     </div>`}`;
   $('h-close').onclick = a.close;
+  $('h-watch').onclick = () => a.watch(i);
   if (!r) return;
   $('stab').onclick = a.toggle;
   $('panel').querySelectorAll('[data-shock]').forEach(el => { el.onclick = () => a.shock(+el.dataset.shock); });
@@ -718,7 +741,7 @@ export function renderLegend(view, S, D) {
   const src = `<div class="src">Dallas 311 · DCAD 2026 · as of ${D.meta.as_of}</div>`;
   const kinds = [0, 1, 2, 4, 5].map(k => `<div class="row"><i class="sw dot" style="background:${KIND_HEX[k]}"></i>${KIND_NAME[k]}</div>`).join('');
   const html = {
-    detect: `<h4>311 property reports, last 60 days</h4>${ramp}<div class="breaks"><span>sparse</span><span>report density</span><span>dense</span></div><div style="height:6px"></div>${kinds}<div class="row"><i class="sw" style="border:1.5px solid #fcffa4"></i>emerging cluster (150 m cells)</div>`,
+    detect: (S.network ? `<h4>Hidden network</h4><div class="row"><i class="sw" style="background:linear-gradient(90deg,#fca50a,#8ab4ff);height:3px"></i>report → same owner's other building</div><div style="height:8px"></div>` : '') + `<h4>311 property reports, last 60 days</h4>${ramp}<div class="breaks"><span>sparse</span><span>report density</span><span>dense</span></div><div style="height:6px"></div>${kinds}<div class="row"><i class="sw" style="border:1.5px solid #fcffa4"></i>emerging cluster (150 m cells)</div>`,
     predict: S.predict === 'proof'
       ? `<h4>Backtest from ${D.meta.backtest_cutoff}</h4><div class="row"><i class="sw" style="background:var(--open)"></i>flagged, no report yet</div><div class="row"><i class="sw" style="background:var(--hit)"></i>flagged, report landed</div>`
       : S.predict === 'certified'
