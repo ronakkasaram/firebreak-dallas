@@ -439,7 +439,7 @@ async function main() {
         : `offer $${Math.round(object.offer).toLocaleString()} · ${object.buyers_nearby} buyers nearby`),
       className: 'tip' } });
   map.addControl(overlay);
-  // In house mode a click that misses every dot picks the nearest building within 150 m.
+  // In house mode a click that misses every dot picks the nearest building within 25 px (at least 150 m).
   let picked = 0;
   overlay.setProps({ onClick: info => { if (info.picked) picked = performance.now(); } });
   map.on('click', ev => {
@@ -447,7 +447,10 @@ async function main() {
     setTimeout(() => {
       if (performance.now() - picked < 300) return;
       const { lng, lat } = ev.lngLat, { b, n } = D;
-      let best = -1, bd = 150 * 150;
+      // 25 screen pixels, at least 150 m.
+      const mPerPx = 156543 * Math.cos(lat * Math.PI / 180) / 2 ** map.getZoom();
+      const rad = Math.max(150, 25 * mPerPx);
+      let best = -1, bd = rad * rad;
       for (let i = 0; i < n; i++) {
         const dx = (b.lon[i] - lng) * 93600, dy = (b.lat[i] - lat) * 111320, d = dx * dx + dy * dy;
         if (d < bd) { bd = d; best = i; }
