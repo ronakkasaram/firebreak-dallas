@@ -8,11 +8,23 @@ function unpack(buf, layout) {
   return cols;
 }
 
+// Binary columns ship as .bin; hosts that refuse binary files get the same bytes as base64 text.
+async function fetchBin(path) {
+  const r = await fetch(`${path}.bin`);
+  const type = r.headers.get('content-type') || '';
+  if (r.ok && !type.includes('text/html')) return r.arrayBuffer();
+  const text = await fetch(`${path}.b64.txt`).then(x => { if (!x.ok) throw new Error(`missing ${path}`); return x.text(); });
+  const raw = atob(text.trim());
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out.buffer;
+}
+
 export async function load(base = './data') {
   const [meta, bBuf, eBuf, hotspots] = await Promise.all([
     fetch(`${base}/meta.json`).then(r => r.json()),
-    fetch(`${base}/buildings.bin`).then(r => r.arrayBuffer()),
-    fetch(`${base}/events.bin`).then(r => r.arrayBuffer()),
+    fetchBin(`${base}/buildings`),
+    fetchBin(`${base}/events`),
     fetch(`${base}/hotspots.json`).then(r => r.json()),
   ]);
   const lists = await fetch(`${base}/lists.json`).then(r => (r.ok ? r.json() : null)).catch(() => null);
