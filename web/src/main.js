@@ -558,6 +558,7 @@ function houseActions() {
       H.fb = null; runSim();
     },
     clear: () => { S.house.stab = []; S.house.fb = null; runSim(); },
+    shock: n => { S.house.shock = n; runSim(); },
     firebreaks: () => {
       const H = S.house; H.busy = true; H.status = 'Searching for firebreaks…';
       renderHouse(D, H, houseActions());
@@ -570,7 +571,7 @@ function runSim() {
   const H = S.house;
   H.busy = true; H.status = simReady ? `Simulating ${RUNS} futures…` : 'Indexing 241,588 buildings for the simulator…';
   renderHouse(D, H, houseActions());
-  sim.postMessage({ type: 'focus', i: H.i, stab: H.stab, runs: RUNS, seed: SEED });
+  sim.postMessage({ type: 'focus', i: H.i, stab: H.stab, runs: RUNS, seed: SEED, shock: H.shock || 0 });
 }
 function onSim({ data: msg }) {
   const H = S.house;
@@ -585,7 +586,7 @@ function onSim({ data: msg }) {
 }
 function pickHouse(i) {
   const prev = S.house;
-  S.house = { i, stab: prev ? prev.stab : [], res: null, fb: null, busy: true, status: '' };
+  S.house = { i, stab: prev ? prev.stab : [], res: null, fb: null, busy: true, status: '', shock: 0 };
   if (!prev || Math.hypot((D.b.lon[prev.i] - D.b.lon[i]) * M_LON, (D.b.lat[prev.i] - D.b.lat[i]) * M_LAT) > 400) {
     S.house.stab = []; fly(D.b.lon[i], D.b.lat[i], 15.6);
   }
@@ -1005,6 +1006,8 @@ async function main() {
   cutoffDay = dateToDay(meta, meta.backtest_cutoff);
   D.label = label;
   D.ROUTE = ROUTE;
+  D.factorCounts = new Array(10).fill(0);
+  for (let i = 0; i < n; i++) D.factorCounts[factorOf(b.risk[i] / 255) - 1]++;
   D.allIdx = Array.from({ length: n }, (_, i) => i);
   D.eDayF = Float32Array.from(e.day);
   D.eColor = new Uint8Array(m * 4);

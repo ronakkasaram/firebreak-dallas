@@ -27,6 +27,7 @@ const HORIZON = 90;
 
 let B, E, P, today, bGrid, eGrid;
 let R = null; // the current region
+let SHOCK = null; // { g, n }: n hypothetical code reports at building g today (the stress test)
 
 const key = (gx, gy) => gx * 100000 + gy;
 function gridOf(lon, lat, n, keep) {
@@ -125,6 +126,14 @@ function startCharge(stab) {
     for (let q = 0; q < m.length; q += 2) c[m[q]] -= m[q + 1];
   }
   for (let a = 0; a < R.N; a++) if (c[a] < 0) c[a] = 0;
+  // Stress test: the shock reports charge their own building and its neighbours like real ones.
+  if (SHOCK && !stab.includes(SHOCK.g)) {
+    const a0 = R.local.get(SHOCK.g);
+    if (a0 !== undefined) {
+      c[a0] += SHOCK.n * P.aSelf[0] * P.slow;
+      for (let q = R.start[a0]; q < R.start[a0 + 1]; q++) c[R.idx[q]] += SHOCK.n * P.aNb[0] * P.slow * R.w[q];
+    }
+  }
   return c;
 }
 
@@ -284,7 +293,16 @@ onmessage = ({ data: msg }) => {
   if (msg.type === 'add') return addEvents(msg.ev);
   if (msg.type === 'focus') {
     if (!R || R.i !== msg.i) region(msg.i);
-    return postMessage(summary(msg.stab, msg.runs, msg.seed));
+    SHOCK = null;
+    const calm = msg.shock > 0 ? monteCarlo(msg.stab, msg.runs, msg.seed) : null;
+    SHOCK = msg.shock > 0 ? { g: msg.i, n: msg.shock } : null;
+    const out = summary(msg.stab, msg.runs, msg.seed);
+    if (calm) {
+      const cur = out.withS || out.base, N = R.N;
+      let dp = 0; for (let a = 0; a < N; a++) if (a !== R.focus) dp += cur.pBy[HORIZON * N + a] - calm.pBy[HORIZON * N + a];
+      out.shock = { n: msg.shock, extra: cur.cumDaily[HORIZON] - calm.cumDaily[HORIZON], calmArea: calm.cumDaily[HORIZON], neighbourOdds: dp };
+    }
+    return postMessage(out);
   }
   if (msg.type === 'firebreaks') {
     if (!R || R.i !== msg.i) region(msg.i);

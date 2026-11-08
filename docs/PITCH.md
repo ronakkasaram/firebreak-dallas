@@ -79,6 +79,19 @@ Add these between steps 3 and 4:
   three districts. Before anyone acts on our list, we audit it by council district. Five districts were
   under-served at first; our district-fair re-ranking fixes all five and costs two points of precision."
 
+## Features to reach for when a judge asks "can it do X?"
+
+| Ask | Where | What to say |
+|---|---|---|
+| "How bad is this building?" | Click it (any view) | "Distress Factor 7 out of 10, like a flood factor. The strip is two years of its reports by week." |
+| "What happens if it gets worse?" | Simulate > Stress test, +10 | "Ten new reports here today means about N more within 700 m over 90 days, through the same cascade the model learned." |
+| "Whose problem is it?" | Simulate > Who this building pushes on | "Its reports raise these neighbours' odds. That's the part of the problem its owner doesn't pay for." |
+| "What would you do with $500K?" | Act > Budget plan, drag the slider | "Ranked by reports prevented per dollar. The curve shows where more money stops paying." |
+| "Who uses this tomorrow morning?" | Act > District brief > 20 stops | "Each council office gets a brief and tomorrow's crew route: N km, about N hours, open in Google Maps." |
+| "What's in it for a property owner?" | Act > Portfolio (search a company) | "Share of their risk coming from buildings they don't own, and the outside buildings to fix or buy first." |
+| "And the wholesale angle?" | Act > Acquisition leads, open a lead | "Natural buyers next door: the portfolios that lose most if this house tips. A drive-for-dollars loop plans the route." |
+| "Is it real time?" | The live dot, top bar | "New 311 reports since our snapshot, matched to buildings and re-scored." |
+
 ## How it maps to what CBRE asked for
 
 | CBRE brief | Firebreak |
@@ -86,12 +99,12 @@ Add these between steps 3 and 4:
 | "a clear, live-demoable, working prototype" (the only scoring rule) | Runs in the browser on real Dallas data, with a live 311 feed |
 | "connects fragmented real estate data" | DCAD roll + 311 + business tenants, joined by address with no shared IDs |
 | "detect hidden dependencies" | Next door 1.26×, same owner 1.20×, pipes and streets 0.99× (measured on buildings with no prior report) |
-| "predict cascading failures" | Hawkes spread model; Monte Carlo cascades; spread rate R by month and district |
+| "predict cascading failures" | Hawkes spread model; Monte Carlo cascades; stress test (inject a shock, watch it spread); spread rate R by month and district |
 | "quantify business impact" | Value at stake, value lost next door, rent exposed, value protected per dollar |
-| "execute solutions before disruptions spread" | Firebreak search, budget plan, work-order export, human approval |
+| "execute solutions before disruptions spread" | Firebreak search, budget plan, crew routes, district briefs, work-order export, human approval |
 | "move beyond passive visualization" | Every view ends in an action: simulate, plan, approve, export |
 | "real-time risk-scoring engines" | Live feed re-scores the neighbours of every new report |
-| "self-updating dependency graphs" | Trigger arcs: each report linked to the earlier report that most likely set it off |
+| "self-updating dependency graphs" | Trigger arcs (each report linked to the one that most likely set it off); inbound and outbound push for every building; owner-to-owner exposure |
 
 Words to use with CBRE engineers: priority interventions ranked by impact, work orders, portfolio-level
 impact, reactive to proactive to predictive, SLA, value protected. Avoid "wholesale leads" at the CBRE

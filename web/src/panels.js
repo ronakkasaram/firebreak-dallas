@@ -296,6 +296,15 @@ export function renderHouse(D, H, a) {
         : '<p class="note">No recent reports here, so it is not pushing on anyone yet.</p>'}
     </div>
     <div class="pane">
+      <div class="sec-h"><h3>Stress test</h3><small>what if this building gets hit today</small></div>
+      <div class="inline"><span class="t2" style="font-size:12px">New code reports here today:</span>
+        ${[0, 3, 10].map(n => `<button class="btn ${(H.shock || 0) === n ? 'primary' : ''}" data-shock="${n}">${n === 0 ? 'None' : '+' + n}</button>`).join('')}</div>
+      ${r.shock ? `<div class="kpis">${kpi('+' + r.shock.extra.toFixed(1), 'extra reports within 700 m', `${r.shock.calmArea.toFixed(1)} expected without the shock`)}${kpi('+' + r.shock.neighbourOdds.toFixed(2), 'neighbours newly expected to get a report', 'sum of the rise in each one\'s 90-day odds')}</div>
+        <p class="note">The shock spreads exactly like real reports in the fitted model: through this building first, then
+          next door within ${D.hawkes.params.radius_m} m. Same random seeds with and without it, so the gap is the shock alone.</p>`
+        : '<p class="note">Inject hypothetical reports and watch the cascade: the columns around it rise.</p>'}
+    </div>
+    <div class="pane">
       <div class="sec-h"><h3>Intervene</h3><small>same random seeds in every scenario</small></div>
       <div class="inline">
         <button class="btn ${stab ? 'primary' : ''}" id="stab">${stab ? 'Stabilized · undo' : 'Stabilize this house'}</button>
@@ -315,6 +324,7 @@ export function renderHouse(D, H, a) {
   $('h-close').onclick = a.close;
   if (!r) return;
   $('stab').onclick = a.toggle;
+  $('panel').querySelectorAll('[data-shock]').forEach(el => { el.onclick = () => a.shock(+el.dataset.shock); });
   $('fb').onclick = a.firebreaks;
   if ($('clear')) $('clear').onclick = a.clear;
   $('panel').querySelectorAll('tr[data-g]').forEach(tr => { tr.onclick = () => a.fly(+tr.dataset.g); });
@@ -588,6 +598,25 @@ export function renderEvidence(D) {
         <li><span>Top-3 clusters, reports over baseline next 60 d</span><b>${alarms.backtest.pooled_obs_over_exp_after}× (busiest cells ${alarms.backtest.control_pooled_obs_over_exp_after}×)</b></li>
       </ul>
     </div>` : ''}
+    <div class="pane">
+      <h3>How to read a Distress Factor</h3>
+      <p class="note">A building's 90-day chance of a new property report, placed on a fixed 1-10 scale, the way a flood or fire
+        factor is read. The cut points are absolute probabilities, so a 7 means the same thing in every district and month.</p>
+      <div class="tw"><table class="t"><thead><tr><th>Factor</th>${Array.from({ length: 10 }, (_, k) => `<th class="r">${k + 1}</th>`).join('')}</tr></thead><tbody>
+        <tr><td>From</td>${[0, ...FACTOR_CUTS].map(c => `<td class="r">${pct(c)}</td>`).join('')}</tr>
+        <tr><td>Buildings</td>${D.factorCounts.map(n => `<td class="r">${n >= 1000 ? Math.round(n / 1000) + 'K' : n}</td>`).join('')}</tr>
+      </tbody></table></div>
+    </div>
+    <div class="pane">
+      <h3>Methods behind the planning tools</h3>
+      <ul class="rows">
+        <li><span>Budget plan</span><b>greedy by reports prevented per dollar</b></li>
+        <li><span>Crew and drive-for-dollars routes</span><b>nearest neighbour + 2-opt</b></li>
+        <li><span>Route time (placeholders)</span><b>${D.ROUTE.kmh} km/h · ×${D.ROUTE.detour} roads · ${D.ROUTE.minPerStop} min a stop</b></li>
+        <li><span>Defensive moves, natural buyers</span><b>Hawkes neighbour kernel, ${D.hawkes?.params.sigma_m} m scale</b></li>
+        <li><span>Stress test</span><b>shock reports enter the same cascade</b></li>
+      </ul>
+    </div>
     <div class="pane">
       <h3>Runs on any city</h3>
       <p class="note">The pipeline needs two inputs: a property roll with locations (any county appraisal district) and a

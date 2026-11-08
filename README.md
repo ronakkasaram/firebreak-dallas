@@ -95,8 +95,17 @@ The console follows one workflow, keys 1 to 5. The presenter guide, with scripts
 
 1. **Detect.** Every Dallas property report, played back over two years. Emerging clusters from an expectation-based subset scan, the live 311 feed since the snapshot, and the spread rate R by month and council district.
 2. **Predict.** The 90-day forecast terrain, the backtest replay (model frozen on Jul 1, 2026), the certified list (conformal selection, at most 10% expected wrong) and the calibration chart. Priority interventions open a dossier with a response plan.
-3. **Simulate.** Click any building: 400 simulated futures for it and every building within 700 m, what drives it, and the 3 firebreaks that spare the most reports next door.
-4. **Act.** A budget plan ranked by reports prevented per dollar, a portfolio view of the risk coming from neighbours an owner does not control, work-order export and hold to approve. Acquisition leads for repair-and-resell buyers sit in a third tab.
+3. **Simulate.** Click any building to open its report:
+   - its Distress Factor (1 to 10) and a two-year timeline;
+   - 400 simulated futures for it and every building within 700 m;
+   - what drives it, and the neighbours it pushes on;
+   - a stress test that injects hypothetical reports;
+   - the 3 firebreaks that spare the most reports next door.
+4. **Act.**
+   - **Budget plan:** ranked by reports prevented per dollar, with a budget curve, CSV and GeoJSON export, and hold to approve.
+   - **District brief:** one page per council office, with tomorrow's crew route (nearest neighbour plus 2-opt).
+   - **Portfolio:** how much of an owner's risk comes from buildings it does not control, and which outside buildings to fix or buy first.
+   - **Acquisition leads:** for repair-and-resell buyers, with natural buyers next door and a drive-for-dollars loop.
 5. **Evidence.** The model card: data joins, held-out results, the Hawkes fit and residuals, fairness by council district, the closure natural experiment with its placebos, and limits.
 
 Press `T` for a guided tour that drives the console by itself. Search and commands (`⌘K` or `/`) find streets, 100-blocks, building names and company portfolios, and jump to any view or action. **Act** also writes a one-page brief for each council district. Every view has a shareable link (`#detect`, `#simulate-b83148`).

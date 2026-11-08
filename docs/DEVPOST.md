@@ -25,6 +25,14 @@ Firebreak is a console that goes from detecting a problem to acting on it, in fi
 4. **Act:** give it a budget and it ranks interventions by reports prevented per dollar, exports work orders, and waits for a human to approve. A portfolio view shows owners how much of their risk comes from neighbours they don't control.
 5. **Evidence:** a model card with every test, including the ones that failed.
 
+Built for the people who act on it:
+
+- **Every building gets a Distress Factor** from 1 to 10, like a flood factor, plus a two-year timeline of its reports.
+- **A stress test** injects hypothetical reports at any building and shows the cascade they set off.
+- **Each council district gets a one-page brief** and tomorrow's crew route, planned with nearest-neighbour and 2-opt and handed off to Google Maps.
+- **Property owners see the share of their risk that comes from buildings they don't own**, and which outside buildings to fix or buy first.
+- **For buyers who repair and resell**, each lead shows its natural buyers: the company portfolios next door that lose the most if it tips. A drive-for-dollars loop plans the route.
+
 Two of CBRE's three "hidden dependencies" turned out to be real and measurable, even on buildings that had
 never had a report:
 
