@@ -228,3 +228,47 @@ table.t th.r { padding-left: 8px; }
 #q-results .ico.name { background: var(--heat-3); border-radius: 50%; }
 #q-results .ico.owner { background: var(--k-rental); }
 .brief-text { width: 100%; height: 160px; background: var(--bg); border: 1px solid var(--line-2); border-radius: 4px; font: 11px var(--mono); color: var(--text-2); padding: 8px; }
+
+/* ---------- Distress Factor and building timeline ---------- */
+.factor { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--raised); }
+.factor .f-num { display: flex; align-items: baseline; gap: 1px; }
+.factor .f-num b { font-size: 28px; font-weight: 600; letter-spacing: -.02em; line-height: 1; }
+.factor .f-num span { color: var(--muted); font-size: 12px; }
+.factor .f-body { display: grid; gap: 4px; }
+.factor .f-word { font-size: 13px; font-weight: 600; }
+.factor .f-seg { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; }
+.factor .f-seg i { height: 6px; background: var(--line); border-radius: 1px; }
+.factor .f-cap { font-size: 11px; color: var(--muted); }
+.tl { display: grid; gap: 1px; height: 14px; }
+.tl i { background: var(--raised); border-radius: 1px; }
+.tl-ax { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: -10px; }
+
+/* ---------- routes ---------- */
+.route-card { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--raised); }
+.stops { margin: 0; padding: 0 0 0 22px; display: grid; gap: 2px; font-size: 12px; color: var(--text-2); }
+.stops li { cursor: pointer; }
+.stops li:hover { color: var(--text); }
+.stops li.more { list-style: none; margin-left: -22px; color: var(--muted); cursor: default; }
+.stops li::marker { color: var(--accent); font: 11px var(--mono); }
+a.btn { display: inline-flex; align-items: center; text-decoration: none; }
+
+/* ---------- first screen ---------- */
+#intro { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; padding: 24px;
+  background: radial-gradient(120% 90% at 30% 40%, rgba(11,12,14,.55), rgba(11,12,14,.92) 70%); }
+.intro-card { width: min(720px, 100%); display: grid; gap: 18px; padding: 28px 28px 20px; background: rgba(13,14,17,.96); border: 1px solid var(--line-2); border-radius: 8px; }
+.intro-mark { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; }
+.intro-card h1 { margin: 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -.02em; text-wrap: balance; }
+.intro-card > p { margin: 0; color: var(--text-2); font-size: 15px; line-height: 1.55; max-width: 62ch; }
+.intro-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.intro-stats div { background: var(--panel); padding: 12px 14px; display: grid; gap: 4px; align-content: start; }
+.intro-stats b { font-size: 20px; font-weight: 600; letter-spacing: -.01em; color: var(--heat-4); }
+.intro-stats span { font-size: 12px; color: var(--text-2); line-height: 1.45; }
+.intro-go { display: flex; gap: 8px; flex-wrap: wrap; }
+.intro-go .btn { height: 36px; padding: 0 14px; font-size: 13px; }
+.intro-go .btn.primary kbd { color: var(--bg); border-color: rgba(0,0,0,.25); margin-left: 6px; }
+.intro-foot { font-size: 11px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }
+@media (max-width: 700px) { .intro-stats { grid-template-columns: 1fr; } .intro-card h1 { font-size: 22px; } }
+#q-results { min-width: 400px; }
+#q-results button { align-items: center; }
+#q-results button span { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#q-results button small, #q-results button kbd { flex: none; }

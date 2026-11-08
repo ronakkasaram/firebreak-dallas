@@ -3,13 +3,13 @@
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { MapboxOverlay } from '@deck.gl/mapbox';
-import { ScatterplotLayer, ColumnLayer, ArcLayer, TextLayer } from '@deck.gl/layers';
+import { ScatterplotLayer, ColumnLayer, ArcLayer, TextLayer, PathLayer } from '@deck.gl/layers';
 import { HexagonLayer, HeatmapLayer } from '@deck.gl/aggregation-layers';
 import { DataFilterExtension } from '@deck.gl/extensions';
 import { load, dayToDate, dateToDay } from './data.js';
 import {
-  $, esc, pct, kusd, fmtDate, CLASS, KIND_HEX, HEAT, LIST_HEX, DEFAULT_COSTS, store,
-  renderDetect, renderPredict, renderSimulateIdle, renderHouse, renderAct, renderEvidence, renderDossier, renderLead, renderLegend,
+  $, esc, pct, kusd, fmtDate, CLASS, factorOf, factorWord, KIND_HEX, HEAT, LIST_HEX, DEFAULT_COSTS, store,
+  renderIntro, renderDetect, renderPredict, renderSimulateIdle, renderHouse, renderAct, renderEvidence, renderDossier, renderLead, renderLegend,
 } from './panels.js';
 import { pullLive, replayLive } from './live.js';
 import { startTour, stopTour, tourActive } from './tour.js';
@@ -46,8 +46,9 @@ const S = {
   selected: null, lead: null, alarm: null, house: null, highlight: null,
   plan: { budget: 500000, costs: { ...DEFAULT_COSTS, ...(store('fb-costs') || {}) }, result: null },
   planApproved: !!store('fb-plan-approved'), portfolio: { owner: null, rows: null, inbound: 0 },
-  live: { status: 'off', note: 'connecting', count: 0, jumps: [] }, brief: null,
+  live: { status: 'off', note: 'connecting', count: 0, jumps: [] }, brief: null, route: null,
 };
+let introClose = null;
 let D, map, overlay, todayDay, cutoffDay, backtestTop, hitDay, sim, simReady = false, liveEv = null;
 
 // ---------- helpers ----------
@@ -59,6 +60,12 @@ function topIndices(arr, k) {
 }
 function zf() { return Math.max(0.1, Math.min(1.4, Math.pow(2, (HOME.zoom - (map ? map.getZoom() : HOME.zoom)) * 0.85))); }
 function fly(lon, lat, zoom = 15.4) { map.flyTo({ center: [lon, lat], zoom, pitch: map.getPitch() > 5 ? 55 : 0, bearing: map.getPitch() > 5 ? -20 : 0, speed: 0.9 }); }
+// Fit a set of points from straight above: a pitched camera hides part of the bounds.
+function fitFlat(bounds, opts = {}) {
+  map.fitBounds(bounds, { ...opts, pitch: 0, bearing: 0 });
+  $('pitch').textContent = '3D';
+  setTimeout(() => overlay.setProps({ layers: layers() }), (opts.duration ?? 900) + 50);
+}
 function home() { map.flyTo({ ...HOME, pitch: map.getPitch() > 5 ? HOME.pitch : 0, bearing: map.getPitch() > 5 ? HOME.bearing : 0, speed: 0.8 }); }
 
 function label(i) {
@@ -231,6 +238,22 @@ function layers() {
     }
   }
 
+  if (v === 'act' && S.route && ((S.act === 'brief' && S.route.kind === 'inspect') || (S.act === 'investor' && S.route.kind === 'd4d'))) {
+    const path = S.route.order.map(i => [b.lon[i], b.lat[i]]);
+    out.push(new PathLayer({ id: 'route-under', data: [path], getPath: d => d, getColor: [11, 12, 14, 255], getWidth: 7, widthUnits: 'pixels', parameters: { depthTest: false } }));
+    out.push(new PathLayer({ id: 'route', data: [path], getPath: d => d, getColor: [...ACCENT, 255], getWidth: 3, widthUnits: 'pixels', jointRounded: true, capRounded: true, parameters: { depthTest: false } }));
+    out.push(new ScatterplotLayer({ id: 'route-stops', data: S.route.order, getPosition: i => [b.lon[i], b.lat[i]], getRadius: 60, radiusMinPixels: 9, radiusMaxPixels: 12,
+      getFillColor: [231, 231, 233, 255], stroked: true, getLineColor: [...ACCENT, 255], lineWidthMinPixels: 2, pickable: true, parameters: { depthTest: false } }));
+    out.push(new TextLayer({ id: 'route-n', data: S.route.order.map((i, k) => ({ p: [b.lon[i], b.lat[i]], t: String(k + 1) })), getPosition: d => d.p, getText: d => d.t,
+      getSize: 10, getColor: [11, 12, 14, 255], fontFamily: 'Inter, system-ui, sans-serif', fontWeight: 600, parameters: { depthTest: false } }));
+  }
+  if (v === 'act' && S.act === 'portfolio' && S.portfolio.pushers?.length) {
+    const arcs = S.portfolio.pushers.slice(0, 8).flatMap(x => x.targets.map(t => ({ s: x.i, t, v: x.v })));
+    out.push(new ArcLayer({ id: 'pushers', data: arcs, getSourcePosition: a => [b.lon[a.s], b.lat[a.s]], getTargetPosition: a => [b.lon[a.t], b.lat[a.t]],
+      getSourceColor: [...PRIORITY, 255], getTargetColor: [...ACCENT, 200], getWidth: 2, getHeight: 0.5 }));
+    out.push(new ScatterplotLayer({ id: 'pusher-dots', data: S.portfolio.pushers.slice(0, 8), getPosition: x => [b.lon[x.i], b.lat[x.i]], getRadius: 30, radiusMinPixels: 5,
+      getFillColor: [...PRIORITY, 255], stroked: true, getLineColor: [11, 12, 14, 255], lineWidthMinPixels: 1, pickable: true, parameters: { depthTest: false } }));
+  }
   if (v === 'evidence' && D.districtLabels) {
     out.push(new TextLayer({
       id: 'district-labels', data: D.districtLabels, getPosition: d => d.p, getText: d => d.t, getSize: 12,
@@ -300,6 +323,13 @@ function houseLayers() {
       id: 'house-stab', data: H.stab, getPosition: g => [b.lon[g], b.lat[g]], getRadius: 26, radiusMinPixels: 6,
       stroked: true, filled: true, getFillColor: [...STAB, 40], getLineColor: [...STAB, 255], lineWidthMinPixels: 1.5,
       parameters: { depthTest: false },
+    }));
+  }
+  if (r.outbound?.length) {
+    const omax = Math.max(...r.outbound.map(o => o.v), 1e-9);
+    out.push(new ArcLayer({
+      id: 'house-outbound', data: r.outbound, getSourcePosition: () => fx, getTargetPosition: o => [b.lon[o.g], b.lat[o.g]],
+      getSourceColor: [...ACCENT, 255], getTargetColor: [...ACCENT, 90], getWidth: o => 1 + 3 * o.v / omax, getHeight: 0.6,
     }));
   }
   const top = r.drivers.top.filter(d => !d.self), vmax = Math.max(...top.map(d => d.v), 1e-9);
@@ -429,7 +459,19 @@ const handlers = {
   district: d => { setBrief(d); render(); },
   copyBrief: async btn => { const t = briefText(S.brief.B); try { await navigator.clipboard.writeText(t); btn.textContent = 'Copied'; } catch { $('brief-text').hidden = false; } },
   tour: () => runTour(),
-  list: id => { S.list = id; S.lead = null; render(); },
+  route: n => { if (S.act === 'brief') setRoute('inspect', S.brief.B.allRows.slice(0, n).map(x => x.i)); render(); },
+  d4d: () => {
+    const L = D.lists.lists.find(l => l.id === S.list) || D.lists.lists[0], byZip = new Map();
+    for (const l of L.leads.slice(0, 150)) if (l.i >= 0) (byZip.get(l.zip) || byZip.set(l.zip, []).get(l.zip)).push(l.i);
+    const best = [...byZip.entries()].sort((a, b) => b[1].length - a[1].length)[0];
+    if (best) { setRoute('d4d', best[1].slice(0, 20)); S.route.zip = best[0]; }
+    render();
+  },
+  clearRoute: () => { S.route = null; render(); },
+  geojson: () => exportGeo(),
+  buyers: i => naturalBuyers(i),
+  pushOn: i => openHouse(i),
+  list: id => { S.list = id; S.lead = null; if (S.route?.kind === 'd4d') S.route = null; render(); },
   lead: l => pickLead(l),
 };
 
@@ -607,11 +649,27 @@ function computePlan(resort = true) {
   }
   let spent = 0; const rows = [];
   for (const r of planOrder) { if (spent + r.cost > S.plan.budget) continue; rows.push(r); spent += r.cost; if (spent >= S.plan.budget) break; }
+  // Efficient frontier: reports prevented as the budget grows, along the same ranking.
+  if (resort || !S.plan.frontier) {
+    const fr = [[0, 0]]; let c = 0, r = 0, next = 50000;
+    for (const x of planOrder) { c += x.cost; r += x.own + x.spare; if (c >= next) { fr.push([c, r]); next += 50000; } if (c > 3e6) break; }
+    S.plan.frontier = fr;
+  }
   S.plan.result = {
     n: rows.length, spent, rows,
     reports: rows.reduce((a, r) => a + r.own + r.spare, 0), spared: rows.reduce((a, r) => a + r.spare, 0),
     protected: rows.reduce((a, r) => a + r.protected, 0),
   };
+}
+function exportGeo() {
+  const rows = S.act === 'brief' && S.brief ? S.brief.B.allRows.slice(0, 50) : S.plan.result.rows, b = D.b;
+  const fc = { type: 'FeatureCollection', features: rows.map((r, k) => ({ type: 'Feature',
+    geometry: { type: 'Point', coordinates: [+b.lon[r.i].toFixed(6), +b.lat[r.i].toFixed(6)] },
+    properties: { rank: k + 1, building: label(r.i), class: CLASS[r.cls], council_district: b.district[r.i], cost_usd: r.cost,
+      own_risk_90d: +r.own.toFixed(4), reports_spared_nearby: +r.spare.toFixed(4), distress_factor: factorOf(r.own) } })) };
+  const blob = new Blob([JSON.stringify(fc)], { type: 'application/geo+json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `firebreak-${D.meta.as_of}.geojson`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 function exportPlan() {
   const rows = S.plan.result.rows, b = D.b;
@@ -635,16 +693,105 @@ function setOwner(o) {
   }
   rows.sort((x, y) => b.risk[y.i] - b.risk[x.i]);
   P.rows = rows; P.inbound = tot > 0 ? nb / tot : 0;
+  P.pushers = D.hawkes ? pushersOn(rows.map(r => r.i)).slice(0, 12) : [];
   if (rows.length) {
     const lons = rows.map(r => b.lon[r.i]), lats = rows.map(r => b.lat[r.i]);
-    map.fitBounds([[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]], { padding: 80, maxZoom: 15, duration: 900 });
+    fitFlat([[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]], { padding: 80, maxZoom: 15, duration: 900 });
   }
 }
 function pickLead(l) {
   S.lead = l;
-  renderLead(l, D, () => { S.lead = null; redraw(); });
+  renderLead(l, D, () => { S.lead = null; redraw(); }, i => (D.search && D.b.owner ? naturalBuyers(i) : []));
   fly(l.lon, l.lat, 15);
   redraw();
+}
+
+// ---------- routes: tomorrow's inspection run, or a drive-for-dollars loop ----------
+// Placeholders, labelled in the panel: city driving speed, a road-network detour factor over straight
+// lines, and minutes spent at each stop.
+export const ROUTE = { kmh: 30, detour: 1.3, minPerStop: 12 };
+function metres(i, j) { const dx = (D.b.lon[i] - D.b.lon[j]) * M_LON, dy = (D.b.lat[i] - D.b.lat[j]) * M_LAT; return Math.sqrt(dx * dx + dy * dy); }
+function planRoute(stops) {
+  const n = stops.length; if (n < 2) return { order: stops, km: 0, minutes: n * ROUTE.minPerStop };
+  // Nearest neighbour from the westernmost stop, then 2-opt until no swap helps.
+  let start = 0; for (let k = 1; k < n; k++) if (D.b.lon[stops[k]] < D.b.lon[stops[start]]) start = k;
+  const left = new Set(stops.map((_, k) => k)); left.delete(start);
+  const ord = [start];
+  while (left.size) { const last = stops[ord[ord.length - 1]]; let best = -1, bd = Infinity; for (const k of left) { const d = metres(last, stops[k]); if (d < bd) { bd = d; best = k; } } ord.push(best); left.delete(best); }
+  const dist = (a, b) => metres(stops[ord[a]], stops[ord[b]]);
+  let improved = true, guard = 0;
+  while (improved && guard++ < 50) {
+    improved = false;
+    for (let a = 0; a < n - 2; a++) for (let c = a + 2; c < n - 1; c++) {
+      if (dist(a, a + 1) + dist(c, c + 1) > dist(a, c) + dist(a + 1, c + 1) + 1e-6) { ord.splice(a + 1, c - a, ...ord.slice(a + 1, c + 1).reverse()); improved = true; }
+    }
+  }
+  const order = ord.map(k => stops[k]);
+  let m = 0; for (let k = 1; k < n; k++) m += metres(order[k - 1], order[k]);
+  const km = m / 1000 * ROUTE.detour;
+  return { order, km, minutes: km / ROUTE.kmh * 60 + n * ROUTE.minPerStop };
+}
+function mapsLink(order) {
+  const pts = order.slice(0, 10).map(i => `${D.b.lat[i].toFixed(5)},${D.b.lon[i].toFixed(5)}`);
+  return `https://www.google.com/maps/dir/${pts.join('/')}`;
+}
+function setRoute(kind, stops) {
+  S.route = stops?.length ? { kind, ...planRoute(stops) } : null;
+  if (S.route) {
+    const lons = S.route.order.map(i => D.b.lon[i]), lats = S.route.order.map(i => D.b.lat[i]);
+    fitFlat([[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]], { padding: 90, maxZoom: 15.5, duration: 900 });
+    S.route.link = mapsLink(S.route.order);
+  }
+}
+
+// ---------- hidden dependencies between owners ----------
+
+let recentGrid = null;
+const HK_OF = [0, 1, 2, -1, 3, 4, -1], HK_KEYS = ['code', 'rental', 'tenant', 'vacancy', 'nuisance'];
+function recentEvents() {
+  if (recentGrid) return recentGrid;
+  const e = D.e, p = D.hawkes.params, lo = todayDay - p.window_days, g = new Map();
+  for (let j = lowerDay(lo); j < D.m; j++) {
+    if (!e.new_case[j] || HK_OF[e.kind[j]] < 0 || e.b[j] < 0 || e.day[j] > todayDay) continue;
+    const k = Math.floor(e.lon[j] / 0.003) * 100000 + Math.floor(e.lat[j] / 0.003);
+    (g.get(k) || g.set(k, []).get(k)).push(j);
+  }
+  return (recentGrid = g);
+}
+// Expected reports over 90 days that outside buildings' recent reports set off at a set of owned
+// buildings (the Hawkes neighbour kernel), summed by the outside building they come from.
+function pushersOn(owned) {
+  const p = D.hawkes.params, e = D.e, g = recentEvents(), mine = new Set(owned);
+  const keep = (1 - p.fast_share) * (1 - Math.exp(-p.beta_slow * 90)), R = p.radius_m;
+  const by = new Map();
+  for (const t of owned) {
+    const gx = Math.floor(D.b.lon[t] / 0.003), gy = Math.floor(D.b.lat[t] / 0.003);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      for (const j of g.get((gx + dx) * 100000 + gy + dy) || []) {
+        const src = e.b[j]; if (mine.has(src)) continue;
+        const ddx = (e.lon[j] - D.b.lon[t]) * M_LON, ddy = (e.lat[j] - D.b.lat[t]) * M_LAT, d = Math.sqrt(ddx * ddx + ddy * ddy);
+        if (d > R) continue;
+        const v = p.a_nb[HK_KEYS[HK_OF[e.kind[j]]]] * Math.exp(-d / p.sigma_m) * keep * Math.exp(-p.beta_slow * (todayDay - e.day[j]));
+        const o = by.get(src) || by.set(src, { i: src, v: 0, targets: new Set() }).get(src);
+        o.v += v; o.targets.add(t);
+      }
+    }
+  }
+  return [...by.values()].map(o => ({ i: o.i, v: o.v, n: o.targets.size, targets: [...o.targets] })).sort((x, y) => y.v - x.v);
+}
+// Natural buyers for a house: company portfolios with buildings inside its spread radius, weighted by
+// the same distance kernel. The owner next door has the most to lose if this house tips.
+function naturalBuyers(i) {
+  const b = D.b, p = D.hawkes?.params, R = p?.radius_m || 250, sig = p?.sigma_m || 50, by = new Map();
+  const cell = 0.003, gx = Math.floor(b.lon[i] / cell), gy = Math.floor(b.lat[i] / cell);
+  if (!D.bGrid) { D.bGrid = new Map(); for (let k = 0; k < D.n; k++) { const key = Math.floor(b.lon[k] / cell) * 100000 + Math.floor(b.lat[k] / cell); (D.bGrid.get(key) || D.bGrid.set(key, []).get(key)).push(k); } }
+  for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const k of D.bGrid.get((gx + dx) * 100000 + gy + dy) || []) {
+    const o = b.owner[k]; if (!o || k === i || o === b.owner[i]) continue;
+    const d = metres(i, k); if (d > R) continue;
+    const x = by.get(o) || by.set(o, { o, w: 0, n: 0, value: 0 }).get(o);
+    x.w += Math.exp(-d / sig); x.n++; x.value += b.value[k];
+  }
+  return [...by.values()].sort((x, y) => y.w - x.w).slice(0, 3).map(x => ({ ...x, label: D.search.owners[x.o - 1].label, total: D.search.owners[x.o - 1].buildings }));
 }
 
 // ---------- council district brief ----------
@@ -678,8 +825,8 @@ function computeBrief(d) {
     for (let i = 0; i < D.n; i += 2) { const dx = b.lon[i] - lon, dy = b.lat[i] - lat, dd = dx * dx + dy * dy; if (dd < bd) { bd = dd; best = i; } }
     return b.district[best] === d;
   });
-  const rows = planOrder.filter(x => b.district[x.i] === d).slice(0, 10);
-  return { d, n, homes, exp, cert, r30, r30city, fair, fairAfter, r, clusters, rows,
+  const allRows = planOrder.filter(x => b.district[x.i] === d), rows = allRows.slice(0, 10);
+  return { d, n, homes, exp, cert, r30, r30city, fair, fairAfter, r, clusters, rows, allRows,
     cost: rows.reduce((a, x) => a + x.cost, 0), prevented: rows.reduce((a, x) => a + x.own + x.spare, 0) };
 }
 function briefText(B) {
@@ -702,12 +849,14 @@ function briefText(B) {
 }
 function setBrief(d) {
   S.brief = { d, B: computeBrief(d) };
-  map.fitBounds(districtBounds(d), { padding: 60, duration: 900 });
+  if (S.route?.kind === 'inspect') S.route = null;
+  fitFlat(districtBounds(d), { padding: 60, duration: 900 });
 }
 
 // ---------- guided tour ----------
 
 function runTour() {
+  if (introClose) { introClose(); introClose = null; }
   const m = D.meta, net = m.model.network, num = v => Math.round(v).toLocaleString();
   const top = D.alarms?.clusters?.[0], hot = D.hotspots[0];
   const steps = [
@@ -727,13 +876,23 @@ function runTour() {
       text: () => `${esc(hot.name || label(hot.i))}: Firebreak simulates the next 90 days for it and every building within 700 m, then searches for the 3 repairs that spare the most reports at other houses (green).` },
     { title: 'Budget to work orders', ms: 9000, run: () => { S.act = 'plan'; setView('act'); computePlan(); render(); },
       text: () => `A ${kusd(S.plan.budget)} budget becomes ${S.plan.result.n} ranked interventions, about ${S.plan.result.reports.toFixed(0)} reports prevented. Ranked by reports per dollar, never by property value. A person approves; nothing is sent.` },
-    { title: 'A brief for every council office', ms: 9000, run: () => { S.act = 'brief'; setView('act'); setBrief(worstDistrict()); render(); },
-      text: () => `District ${S.brief.d}: the same engine, cut to one office's map, with its own next 10 actions and its fairness check. One click copies it.` },
+    { title: 'A brief for every council office', ms: 11000, run: () => { S.act = 'brief'; setView('act'); setBrief(worstDistrict()); setRoute('inspect', S.brief.B.allRows.slice(0, 15).map(x => x.i)); render(); },
+      text: () => `District ${S.brief.d}: its own forecast, fairness check and next actions, plus tomorrow's crew route through the top ${S.route.order.length}: ${S.route.km.toFixed(1)} km, about ${(S.route.minutes / 60).toFixed(1)} hours. One click copies the brief.` },
+    { title: 'Who owns the problem next door', ms: 10000, run: () => { S.act = 'portfolio'; setView('act'); const o = bestOwner(); setOwner(o); render(); },
+      text: () => S.portfolio.rows ? `${esc(D.search.owners[S.portfolio.owner - 1].label)}: ${pct(S.portfolio.inbound)} of its buildings' risk comes from neighbours it does not own. Orange: the outside buildings pushing on it. Fixing or buying those protects the portfolio; for a wholesaler, this owner is the natural buyer.` : '' },
     { title: 'Every claim, tested', ms: 9000, run: () => { setView('evidence'); home(); },
       text: () => `Held-out tests, residual checks, a fairness audit by district, and a natural experiment that came back negative, shown rather than hidden. Press T to replay, or explore.` },
   ];
   $('tour-btn')?.classList.add('on');
   startTour(steps, () => { $('tour-btn')?.classList.remove('on'); setPlaying(false); });
+}
+// The tour's portfolio: the company with 8+ buildings whose risk depends most on neighbours.
+function bestOwner() {
+  const b = D.b, agg = new Map();
+  for (let i = 0; i < D.n; i++) { const o = b.owner[i]; if (!o) continue; const x = agg.get(o) || agg.set(o, [0, 0]).get(o); x[0] += b.push_nb[i]; x[1]++; }
+  let best = D.ownerOrder[0], bv = -1;
+  for (const [o, [nb, n]] of agg) if (n >= 8 && nb > bv) { bv = nb; best = o; }
+  return best;
 }
 function worstDistrict() {
   const f = D.meta.audit?.fairness?.districts || [];
@@ -799,7 +958,7 @@ function choose(r) {
   openHouse(r.top);
   if (r.list.length > 1) {
     const lons = r.list.map(i => D.b.lon[i]), lats = r.list.map(i => D.b.lat[i]);
-    map.fitBounds([[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]], { padding: 100, maxZoom: 16, duration: 900 });
+    fitFlat([[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]], { padding: 100, maxZoom: 16, duration: 900 });
   }
 }
 function wireSearch() {
@@ -845,6 +1004,7 @@ async function main() {
   todayDay = dateToDay(meta, meta.as_of);
   cutoffDay = dateToDay(meta, meta.backtest_cutoff);
   D.label = label;
+  D.ROUTE = ROUTE;
   D.allIdx = Array.from({ length: n }, (_, i) => i);
   D.eDayF = Float32Array.from(e.day);
   D.eColor = new Uint8Array(m * 4);
@@ -898,6 +1058,8 @@ async function main() {
     if (info.layer?.id === 'buildings' && info.index >= 0) openHouse(info.index);
     else if ((info.layer?.id === 'plan' || info.layer?.id === 'portfolio') && info.object) openHouse(info.object.i);
     else if (info.layer?.id === 'certified' && info.object !== undefined) openHouse(info.object);
+    else if (info.layer?.id === 'route-stops' && info.object !== undefined) openHouse(info.object);
+    else if (info.layer?.id === 'pusher-dots' && info.object) openHouse(info.object.i);
   } });
   map.on('click', ev => {
     setTimeout(() => {
@@ -950,7 +1112,11 @@ async function main() {
   if (import.meta.env.DEV) window.__fb = { S, D, openHouse, setView, map: () => map }; // console hooks for local testing only
 
   $('loading').remove();
-  if (location.hash.length > 1) readHash(); else setView('detect', { keepHash: true });
+  if (location.hash.length > 1) readHash();
+  else {
+    setView('detect', { keepHash: true });
+    introClose = renderIntro(D, () => runTour(), () => {});
+  }
 
   // Live 311: reports filed since the snapshot. Falls back to replaying the snapshot's last 48 hours.
   pullLive(D, todayDay).then(L => setLive(L)).catch(err => setLive(replayLive(D, todayDay, err.message)));
@@ -985,7 +1151,8 @@ function tooltip(info) {
   const b = D.b, box = html => ({ html, className: 'tip' });
   const id = layer.id;
   if (id === 'buildings' && index >= 0) {
-    return box(`<b>${esc(label(index))}</b><br>${CLASS[b.class[index]]} · ${pct(b.risk[index] / 255)} chance of a report in 90 days<br><span class="muted">Click to simulate</span>`);
+    const f = factorOf(b.risk[index] / 255);
+    return box(`<b>${esc(label(index))}</b><br>Distress Factor <b>${f}/10</b> · ${factorWord(f)}<br>${CLASS[b.class[index]]} · ${pct(b.risk[index] / 255)} chance of a report in 90 days<br><span class="muted">Click to open</span>`);
   }
   if (id === 'hotspots' && object) return box(`<b>${esc(object.name || label(object.i))}</b><br>${object.asset_class} · ${pct(object.risk)} · ${kusd(object.usd.exposure)} at stake`);
   if (id === 'leads' && object) return box(`<b>${esc(label(object.i ?? 0))}</b><br>${pct(object.risk)} · offer ${kusd(object.offer)} · ${object.buyers_nearby} buyers nearby`);
@@ -995,6 +1162,8 @@ function tooltip(info) {
     const r = S.house.res, t = Math.max(0, Math.min(90, S.day - todayDay)), g = r.glob[object];
     return box(`<b>${esc(label(g))}</b><br>${pct((r.withS || r.base).pBy[t * r.N + object])} chance of a report by day ${t}`);
   }
+  if ((id === 'route-stops') && object !== undefined) { const k = S.route.order.indexOf(object); return box(`<b>Stop ${k + 1}</b><br>${esc(label(object))}`); }
+  if (id === 'pusher-dots' && object) return box(`<b>${esc(label(object.i))}</b><br>pushes on ${object.n} of this portfolio's buildings · +${object.v.toFixed(3)} expected reports`);
   if ((id === 'plan' || id === 'portfolio') && object) return box(`<b>${esc(label(object.i))}</b><br>${CLASS[b.class[object.i]]} · ${pct(b.risk[object.i] / 255)} risk`);
   if (id === 'certified' && object !== undefined) return box(`<b>${esc(label(object))}</b><br>certified · calibrated ${pct(b.risk_lo[object] / 255)}–${pct(b.risk_hi[object] / 255)}`);
   if (id === 'live' && object) return box(`<b>New since snapshot</b><br>${esc(object.type)}<br>${esc(object.when)}`);

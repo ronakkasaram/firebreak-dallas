@@ -16,6 +16,35 @@ export const KIND_HEX = ['#e69f00', '#56b4e9', '#009e73', '#999999', '#cc79a7', 
 export const HEAT = ['#420a68', '#932667', '#dd513a', '#fca50a', '#fcffa4'];
 const HK = ['code', 'rental', 'tenant', 'vacancy', 'nuisance'];
 
+// Distress Factor: the 90-day chance of a new property report on a fixed 1-10 scale, read the way a
+// First Street Flood Factor is read. The cut points are absolute probabilities, not ranks, so a score
+// means the same thing in every district and every month.
+export const FACTOR_CUTS = [0.01, 0.02, 0.04, 0.07, 0.11, 0.17, 0.25, 0.40, 0.60];
+export const factorOf = p => 1 + FACTOR_CUTS.filter(c => p >= c).length;
+export const factorWord = f => (f <= 2 ? 'Minimal' : f <= 4 ? 'Minor' : f <= 6 ? 'Moderate' : f <= 8 ? 'Major' : f === 9 ? 'Severe' : 'Extreme');
+export function factorMeter(p, big = true) {
+  const f = factorOf(p);
+  return `<div class="factor ${big ? 'big' : ''}"><div class="f-num"><b>${f}</b><span>/10</span></div>
+    <div class="f-body"><div class="f-word">${factorWord(f)} distress risk</div>
+    <div class="f-seg">${Array.from({ length: 10 }, (_, k) => `<i style="${k < f ? `background:${HEAT[Math.min(4, Math.floor(k / 2))]}` : ''}"></i>`).join('')}</div>
+    <div class="f-cap">Distress Factor · ${pct(p)} chance of a new report in 90 days</div></div></div>`;
+}
+
+// Two years of reports at one building, by week, coloured by the most serious kind that week.
+function timeline(D, i) {
+  const { e, m, meta } = D, weeks = 105, cells = new Array(weeks).fill(null);
+  let n = 0;
+  for (let j = 0; j < m; j++) {
+    if (e.b[j] !== i || e.kind[j] === 6) continue;
+    n++;
+    const w = Math.min(weeks - 1, Math.floor(e.day[j] / 7));
+    cells[w] = cells[w] === null ? e.kind[j] : cells[w];
+  }
+  if (!n) return '<p class="note">No property reports at this building in the last two years.</p>';
+  return `<div class="tl" style="grid-template-columns:repeat(${weeks},1fr)">${cells.map(k => `<i style="${k === null ? '' : `background:${KIND_HEX[k]}`}"></i>`).join('')}</div>
+    <div class="tl-ax"><span>${meta.events_start.slice(0, 7)}</span><span>${n} report${n === 1 ? '' : 's'}, by week</span><span>${meta.as_of.slice(0, 7)}</span></div>`;
+}
+
 export function veilAddr(a) { return String(a).replace(/^\d+/, m => (Math.floor(+m / 100) * 100) + ' block of'); }
 function shownAddr(h) { return h.asset_class === 'home' ? veilAddr(h.address) : h.address; }
 
@@ -235,6 +264,8 @@ export function renderHouse(D, H, a) {
       <div class="ph"><h2>${esc(title)}</h2><button class="close" id="h-close">Back to overview (Esc)</button></div>
       <p class="t2">${CLASS[b.class[i]]} · council district ${b.district?.[i] || '—'} · DCAD value ${kusd(b.value[i])} ·
         ${b.reports_365[i]} reports in the last year</p>
+      ${factorMeter(b.risk[i] / 255)}
+      ${timeline(D, i)}
       <div class="kpis">
         ${kpi(pct(b.risk[i] / 255), 'boosted-model 90-day risk', b.risk_lo ? `calibrated ${pct(b.risk_lo[i] / 255)}–${pct(b.risk_hi[i] / 255)}${b.certified?.[i] ? ' · certified' : ''}` : '')}
         ${r ? kpi(stab ? '0%' : pct(pWith ?? pBase), 'simulated chance of a report', pWith !== null && !stab ? `${pct(pBase)} with no firebreaks` : r.base.medianDay ? `median first day ${r.base.medianDay}` : '') : kpi('<span class="skel" style="display:block;width:60px"></span>', 'simulating', '')}
@@ -256,6 +287,13 @@ export function renderHouse(D, H, a) {
       ${dr.top.length ? `<table class="t"><thead><tr><th>Recent report</th><th>Where</th><th class="r">Push</th></tr></thead><tbody>
         ${dr.top.slice(0, 5).map(t => `<tr><td>${KIND_NAME[t.kind]}</td><td>${t.self ? 'this house' : t.d + ' m away'}, ${t.age} d ago</td><td class="r">+${t.v.toFixed(3)}</td></tr>`).join('')}
       </tbody></table>` : '<p class="note">No reports within 250 m in the last 180 days.</p>'}
+    </div>
+    <div class="pane">
+      <div class="sec-h"><h3>Who this building pushes on</h3><small>outbound, expected reports, 90 days</small></div>
+      ${r.outbound?.length ? `<p class="note">Its own recent reports raise ${r.outbound.length} neighbours' odds by ${r.outboundTotal.toFixed(2)} expected reports in
+        total (blue arcs). This is the part of the problem that is not its owner's alone.</p>
+        <table class="t"><tbody>${r.outbound.slice(0, 5).map(o => `<tr class="pick" data-g="${o.g}"><td>${esc(D.label(o.g))}<small>${CLASS[b.class[o.g]]}</small></td><td class="r">+${o.v.toFixed(3)}</td></tr>`).join('')}</tbody></table>`
+        : '<p class="note">No recent reports here, so it is not pushing on anyone yet.</p>'}
     </div>
     <div class="pane">
       <div class="sec-h"><h3>Intervene</h3><small>same random seeds in every scenario</small></div>
@@ -311,7 +349,9 @@ export function renderAct(D, S, h) {
           ${P.result.rows.slice(0, 25).map(r => `<tr class="pick" data-b="${r.i}"><td>${esc(D.label(r.i))}<small>${CLASS[r.cls]} · ${kusd(r.cost)} · district ${D.b.district?.[r.i] || '—'}</small></td>
             <td class="r">${r.own.toFixed(2)}</td><td class="r">${r.spare.toFixed(2)}</td><td class="r">${(r.ratio * 1e5).toFixed(1)}</td></tr>`).join('')}
         </tbody></table></div>
-        <div class="inline"><button class="btn" id="plan-csv">Export work orders (CSV)</button></div>
+        ${P.frontier ? `<div class="sec"><div class="sec-h"><h3>What more money buys</h3><small>reports prevented, 90 days</small></div>${frontierChart(P.frontier, P.budget)}
+          <p class="note">Each extra dollar buys less: the first buildings on the list are the best value. Where the curve flattens, more budget stops paying.</p></div>` : ''}
+        <div class="inline"><button class="btn" id="plan-csv">Export work orders (CSV)</button><button class="btn" id="plan-geo">GeoJSON</button></div>
         ${holdHtml(S.planApproved ? 'Plan approved · queued for a human to send' : 'Hold to approve this plan', S.planApproved)}
         <p class="note">Ranked by reports prevented per dollar: the building's own chance of a report plus the reports it
           would set off at other houses (Hawkes, first order), divided by its cost. Ranking by property value would send
@@ -344,6 +384,8 @@ export function renderAct(D, S, h) {
           ${B.rows.map((r, k) => `<tr class="pick" data-b="${r.i}"><td>${k + 1}</td><td>${esc(D.label(r.i))}<small>${CLASS[r.cls]}</small></td>
             <td class="r">${pct(r.own)}</td><td class="r">${r.spare.toFixed(2)}</td><td class="r">${kusd(r.cost)}</td></tr>`).join('')}
         </tbody></table></div>
+        ${S.route?.kind === 'inspect' ? routeHtml(D, S.route, 'Tomorrow\'s inspection route') : `<div class="inline"><span class="t2" style="font-size:12px">Plan a crew route through the top</span>
+          ${[10, 20, 30].map(n => `<button class="btn" data-route="${n}">${n} stops</button>`).join('')}</div>`}
         <textarea id="brief-text" class="brief-text" readonly hidden>${esc(S.brief.text || '')}</textarea>
         <p class="note">Costs are the placeholders from the budget plan. Rankings use reports prevented per dollar, so a
           district's list does not depend on its property values.</p>
@@ -364,8 +406,14 @@ export function renderAct(D, S, h) {
           ${kpi(num(P.rows.length), 'buildings in Dallas', '')}
           ${kpi(pct(P.inbound), 'of its 90-day risk comes from neighbours', 'Hawkes decomposition')}
         </div>
+        ${P.pushers?.length ? `<div class="sec"><div class="sec-h"><h3>Defensive moves: buildings it does not own</h3><small>push on this portfolio, 90 days</small></div>
+          <p class="note">These outside buildings' recent reports raise the odds at this owner's buildings (orange arcs). Fixing them, or
+            buying them, protects the portfolio more than any repair on its own property. For a wholesaler, this owner is the natural buyer.</p>
+          <div class="tw"><table class="t"><thead><tr><th>Outside building</th><th class="r">Hits</th><th class="r">Push</th></tr></thead><tbody>
+          ${P.pushers.slice(0, 8).map(x => `<tr class="pick" data-b="${x.i}"><td>${esc(D.label(x.i))}<small>${CLASS[D.b.class[x.i]]} · Distress Factor ${factorOf(D.b.risk[x.i] / 255)}</small></td><td class="r">${x.n}</td><td class="r">+${x.v.toFixed(3)}</td></tr>`).join('')}
+          </tbody></table></div></div>` : '<p class="note">No outside building has pushed on this portfolio in the last 180 days.</p>'}
         <div class="tw"><table class="t"><thead><tr><th>Building</th><th class="r">Risk</th><th class="r">From neighbours</th></tr></thead><tbody>
-          ${P.rows.slice(0, 40).map(r => `<tr class="pick" data-b="${r.i}"><td>${esc(D.label(r.i))}<small>${CLASS[D.b.class[r.i]]}</small></td>
+          ${P.rows.slice(0, 15).map(r => `<tr class="pick" data-b="${r.i}"><td>${esc(D.label(r.i))}<small>${CLASS[D.b.class[r.i]]}</small></td>
             <td class="r">${pct(D.b.risk[r.i] / 255)}</td><td class="r">${r.nb.toFixed(2)} <small style="display:inline">(${pct(r.share)})</small></td></tr>`).join('')}
         </tbody></table></div>
         <p class="note">Open a building to see which outside houses push on it, and which firebreak would protect it.</p>` : ''}
@@ -380,20 +428,50 @@ export function renderAct(D, S, h) {
       ${tabs}
     </div>${body}`;
   $('act-sub').onclick = ev => { const k = ev.target.closest('button')?.dataset.k; if (k) h.sub(k); };
+  queueMicrotask(() => {
+    if ($('route-clear')) $('route-clear').onclick = h.clearRoute;
+    $('panel').querySelectorAll('.stops li[data-b]').forEach(li => { li.onclick = () => h.house(+li.dataset.b); });
+  });
   $('panel').querySelectorAll('tr[data-b]').forEach(tr => { tr.onclick = () => h.house(+tr.dataset.b); });
   if (sub === 'plan') {
     $('budget').oninput = ev => h.budget(+ev.target.value);
     $('panel').querySelectorAll('[data-cost]').forEach(el => { el.onchange = () => h.cost(el.dataset.cost, +el.value); });
     $('plan-csv').onclick = h.csv;
+    $('plan-geo').onclick = h.geojson;
     wireHold($('panel').querySelector('.hold'), h.approve);
   } else if (sub === 'brief') {
     if ($('district')) $('district').onchange = ev => h.district(+ev.target.value);
     if ($('brief-copy')) $('brief-copy').onclick = ev => h.copyBrief(ev.currentTarget);
+    $('panel').querySelectorAll('[data-route]').forEach(el => { el.onclick = () => h.route(+el.dataset.route); });
   } else if (sub === 'portfolio') {
     $('owner').onchange = ev => h.owner(+ev.target.value || null);
   } else {
     renderInvestor(D, S, h);
   }
+}
+
+function routeHtml(D, R, what) {
+  const P = D.ROUTE;
+  return `<div class="route-card">
+    <div class="sec-h"><h3>${what}</h3><small>${R.order.length} stops</small></div>
+    <div class="kpis">${kpi(R.km.toFixed(1) + '<small>km</small>', 'driving', `straight lines × ${P.detour} for roads`)}${kpi((R.minutes / 60).toFixed(1) + '<small>h</small>', 'on the road and at the door', `${P.kmh} km/h, ${P.minPerStop} min a stop (placeholders)`)}</div>
+    <ol class="stops">${R.order.slice(0, 12).map(i => `<li data-b="${i}">${esc(D.label(i))}</li>`).join('')}${R.order.length > 12 ? `<li class="more">and ${R.order.length - 12} more</li>` : ''}</ol>
+    <div class="inline"><a class="btn" href="${R.link}" target="_blank" rel="noopener">Open first 10 stops in Google Maps</a><button class="btn" id="route-clear">Clear route</button></div>
+    <p class="note">Order: nearest neighbour, then 2-opt until no swap of two legs shortens the loop.</p></div>`;
+}
+
+// Budget curve: reports prevented as the budget grows, along the plan's own ranking.
+function frontierChart(fr, budget) {
+  const W = 368, H = 120, pad = { l: 34, r: 8, t: 8, b: 20 }, xmax = fr[fr.length - 1][0], ymax = fr[fr.length - 1][1];
+  const x = v => pad.l + (W - pad.l - pad.r) * v / xmax, y = v => pad.t + (H - pad.t - pad.b) * (1 - v / ymax);
+  const d = fr.map(([c, r], k) => `${k ? 'L' : 'M'}${x(c).toFixed(1)},${y(r).toFixed(1)}`).join('');
+  let at = fr[0]; for (const pt of fr) if (pt[0] <= budget) at = pt;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="Budget curve">
+    ${[0, ymax / 2, ymax].map(t => `<line class="grid" x1="${pad.l}" x2="${W - pad.r}" y1="${y(t)}" y2="${y(t)}"/><text x="${pad.l - 6}" y="${y(t) + 4}" text-anchor="end">${t.toFixed(0)}</text>`).join('')}
+    <path d="${d} L${x(xmax)},${y(0)} L${x(0)},${y(0)}Z" fill="rgba(252,165,10,.08)"/><path d="${d}" fill="none" stroke="#fca50a" stroke-width="1.5"/>
+    <line x1="${x(budget)}" x2="${x(budget)}" y1="${pad.t}" y2="${H - pad.b}" stroke="#e7e7e9" stroke-dasharray="2 3"/>
+    <circle cx="${x(at[0])}" cy="${y(at[1])}" r="3" fill="#e7e7e9"/>
+    <text x="${pad.l}" y="${H - 4}">$0</text><text x="${W - pad.r}" y="${H - 4}" text-anchor="end">${kusd(xmax)} budget</text></svg>`;
 }
 
 function holdHtml(label, signed) {
@@ -426,11 +504,13 @@ function renderInvestor(D, S, h) {
       ${kpi(pct(bt.hit_rate || 0), `of top ${bt.top} got a report in 90 days`, `held-out ${D.lists.backtest_cutoff}`)}
       ${kpi((bt.rank_lift || 0).toFixed(1) + '<small>×</small>', 'better than the rule alone', `rule alone ${pct(bt.pool_rate || 0, 1)}`)}
     </div>
+    ${S.route?.kind === 'd4d' ? routeHtml(D, S.route, `Drive-for-dollars loop, ${S.route.zip}`) : `<div class="inline"><button class="btn" id="d4d">Plan a drive-for-dollars loop (densest zip)</button></div>`}
     <div class="tw"><table class="t"><thead><tr><th>House</th><th class="r">Risk</th><th class="r">Offer</th></tr></thead><tbody>
       ${L.leads.slice(0, 40).map((l, k) => `<tr class="pick" data-k="${k}"><td>${esc(shownAddr(l))}<small>${l.zip} · ${l.reports_365} reports · ${l.buyers_nearby} buyers nearby</small></td>
         <td class="r">${pct(l.risk)}</td><td class="r">${l.viable ? kusd(l.offer) : '—'}</td></tr>`).join('')}
     </tbody></table></div>`;
   $('lists').onclick = ev => { const id = ev.target.closest('button')?.dataset.l; if (id) h.list(id); };
+  if ($('d4d')) $('d4d').onclick = h.d4d;
   el.querySelectorAll('tr[data-k]').forEach(tr => { tr.onclick = () => h.lead(L.leads[+tr.dataset.k]); });
 }
 
@@ -541,6 +621,7 @@ export function renderDossier(x, D, onClose) {
   el.innerHTML = `<div class="pane">
     <div class="ph"><h2>${esc(x.name || shownAddr(x))}</h2><button class="close" id="d-close">Close (Esc)</button></div>
     <p class="t2">${x.asset_class}${x.building_type ? ' · ' + esc(x.building_type.toLowerCase()) : ''} · ${esc(shownAddr(x))}, ${x.zip}${x.year_built ? ` · built ${x.year_built}` : ''}${x.units ? ` · ${x.units} units` : ''}</p>
+    ${factorMeter(x.risk, false)}
     <div class="kpis">
       ${kpi(pct(x.risk), 'chance of a new report, 90 days', `own history only ${pct(x.risk_base)}`)}
       ${kpi(kusd(x.usd.exposure), 'at stake if it spreads', `${kusd(x.usd.neighbor_value)} of homes within 200 m`)}
@@ -568,13 +649,15 @@ export function renderDossier(x, D, onClose) {
   el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-export function renderLead(l, D, onClose) {
+export function renderLead(l, D, onClose, buyersOf) {
+  const buyers = buyersOf && l.i >= 0 ? buyersOf(l.i) : [];
   const el = $('detail');
   const queued = store('fb-queued') || {};
   el.hidden = false;
   el.innerHTML = `<div class="pane">
     <div class="ph"><h2>${esc(shownAddr(l))}</h2><button class="close" id="d-close">Close (Esc)</button></div>
     <p class="t2">${l.asset_class} · Dallas ${l.zip}${l.year_built ? ` · built ${l.year_built}` : ''}</p>
+    ${factorMeter(l.risk, false)}
     <div class="kpis">${kpi(pct(l.risk), 'chance of a new report, 90 days', '')}${kpi(pct(l.p_two_buyers), 'chance 2 repeat buyers want it', `${l.buyers_nearby} nearby`)}</div>
     <ul class="rows">
       <li><span>Reports here · next door · block</span><b>${l.reports_365} · ${l.next_door_30d} · ${l.block_90d}</b></li>
@@ -583,6 +666,11 @@ export function renderLead(l, D, onClose) {
       <li><span>Offer at 70% rule</span><b>${usd(l.offer)}</b></li>
       <li class="total"><span>Assignment fee</span><b>${l.viable ? usd(l.fee) : 'does not pencil'}</b></li>
     </ul>
+    <div class="sec"><div class="sec-h"><h3>Natural buyers next door</h3><small>portfolios inside its 250 m spread radius</small></div>
+      ${buyers.length ? `<table class="t"><tbody>${buyers.map(x => `<tr><td>${esc(x.label)}<small>${x.n} of its ${x.total} buildings within 250 m · ${kusd(x.value)} exposed</small></td><td class="r">${x.w.toFixed(2)}</td></tr>`).join('')}</tbody></table>
+        <p class="note">Ranked by the spread kernel (closer buildings count more). If this house tips, these owners lose the most, so they
+          are the buyers most likely to pay to stop it. Company owners only.</p>` : '<p class="note">No company portfolio has buildings within 250 m.</p>'}
+    </div>
     ${holdHtml(queued[l.parcel_id] ? 'Queued · a human sends' : 'Hold to queue for outreach', queued[l.parcel_id])}
     <p class="note">Owner names and mailing addresses never leave the private export. Nothing is mailed from here.</p>
   </div>`;
@@ -612,11 +700,37 @@ export function renderLegend(view, S, D) {
     act: S.act === 'plan'
       ? `<h4>Budget plan</h4><div class="row"><i class="sw dot" style="background:#fca50a"></i>home in the plan</div><div class="row"><i class="sw dot" style="background:#8ab4ff"></i>apartment or commercial building</div><div class="breaks" style="margin-top:4px"><span>size: home value protected nearby</span></div>`
       : S.act === 'brief'
-        ? `<h4>District brief</h4><div class="row"><i class="sw dot" style="background:#fca50a"></i>next 10 actions, numbered by rank</div>`
+        ? (S.route ? `<h4>Crew route</h4><div class="row"><i class="sw" style="background:#8ab4ff;height:3px"></i>driving order, stops numbered</div>` : `<h4>District brief</h4><div class="row"><i class="sw dot" style="background:#fca50a"></i>next 10 actions, numbered by rank</div>`)
         : S.act === 'portfolio'
-          ? `<h4>Portfolio buildings</h4>${ramp}<div class="breaks"><span>own risk</span><span>share from neighbours</span><span>outside risk</span></div><div class="row" style="margin-top:4px">size: 90-day risk</div>`
-          : `<h4>Acquisition leads</h4><div class="row"><i class="sw dot" style="background:#e69f00"></i>lead on the selected list</div>`,
+          ? `<h4>Portfolio buildings</h4><div class="row"><i class="sw dot" style="background:#fca50a"></i>outside building pushing on it</div>${ramp}<div class="breaks"><span>own risk</span><span>share from neighbours</span><span>outside risk</span></div><div class="row" style="margin-top:4px">size: 90-day risk</div>`
+          : `<h4>Acquisition leads</h4><div class="row"><i class="sw dot" style="background:#e69f00"></i>lead on the selected list</div>${S.route ? '<div class="row"><i class="sw" style="background:#8ab4ff;height:3px"></i>drive-for-dollars loop</div>' : ''}`,
     evidence: `<h4>Recall by council district</h4>${ramp}<div class="breaks"><span>under-served</span><span>city</span><span>over-served</span></div>`,
   }[view];
   $('legend').innerHTML = html + src;
+}
+
+// ---------- first screen ----------
+
+export function renderIntro(D, onTour, onExplore) {
+  const m = D.meta, net = m.model.network, lt = m.audit?.lead_time?.rankings?.network;
+  const el = document.createElement('div');
+  el.id = 'intro';
+  el.innerHTML = `<div class="intro-card">
+    <div class="intro-mark"><svg width="22" height="22" viewBox="0 0 18 18" aria-hidden="true"><rect x="1" y="1" width="6" height="16" rx="1" fill="#dd513a"/><rect x="11" y="1" width="6" height="16" rx="1" fill="#33363d"/></svg>Firebreak</div>
+    <h1>Property distress spreads like fire.<br>See where it goes next, and where to stop it.</h1>
+    <p>A forecast, simulator and work planner for every building in Dallas, built from public records that share no IDs:
+      the ${m.counts.buildings.toLocaleString()}-building appraisal roll and ${m.counts.reports.toLocaleString()} city 311 reports.</p>
+    <div class="intro-stats">
+      <div><b>${pct(net.watch_precision)}</b><span>of the top ${net.watch_list.toLocaleString()} flagged buildings got a report within 90 days, on data the model never saw (base rate ${pct(net.base_rate, 1)})</span></div>
+      <div><b>${m.edges.block.ratio.toFixed(2)}×</b><span>higher odds when the house next door had a report; ${m.edges.owner.ratio.toFixed(2)}× when another building with the same owner did</span></div>
+      ${lt ? `<div><b>${lt.median_days_ahead} days</b><span>median warning before the first call, for ${lt.cases_reached_early.toLocaleString()} cases a 50-visit-a-day crew would reach first</span></div>` : ''}
+    </div>
+    <div class="intro-go"><button class="btn primary" id="intro-tour">Take the 80-second tour <kbd>T</kbd></button><button class="btn" id="intro-explore">Explore the map</button></div>
+    <div class="intro-foot">Dallas 311 · DCAD 2026 certified roll · data through ${fmtDate(new Date(m.as_of))} · HackUTD 2026, CBRE: Predict Before It Spreads</div>
+  </div>`;
+  document.getElementById('stage').appendChild(el);
+  const close = () => el.remove();
+  el.querySelector('#intro-tour').onclick = () => { close(); onTour(); };
+  el.querySelector('#intro-explore').onclick = () => { close(); onExplore(); };
+  return close;
 }

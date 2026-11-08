@@ -252,7 +252,12 @@ function summary(stab, runs, seed) {
   const bg = R.mu[f] * HORIZON;
   const selfV = drivers.filter(d => d.self).reduce((a, d) => a + d.v, 0);
   const nbV = drivers.filter(d => !d.self).reduce((a, d) => a + d.v, 0);
+  // Outbound: the charge this building's own recent reports put on each neighbour (who it pushes on).
+  const outM = R.bySrc.get(R.i) || [], agg = new Map();
+  for (let q = 0; q < outM.length; q += 2) if (outM[q] !== f) agg.set(outM[q], (agg.get(outM[q]) || 0) + outM[q + 1] * keep);
+  const outbound = [...agg.entries()].map(([a, v]) => ({ g: R.glob[a], v })).sort((x, y) => y.v - x.v);
   return {
+    outbound: outbound.slice(0, 40), outboundTotal: outbound.reduce((a, o) => a + o.v, 0),
     type: 'result', i: R.i, N, glob: R.glob, focus: f, runs, stab,
     base: { pBy: base.pBy, cumDaily: base.cumDaily, medianDay: base.medianDay, p10: base.p10, p90: base.p90 },
     withS: withS && { pBy: withS.pBy, cumDaily: withS.cumDaily, medianDay: withS.medianDay, p10: withS.p10, p90: withS.p90 },
