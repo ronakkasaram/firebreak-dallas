@@ -2,6 +2,8 @@
 
 **Predict before it spreads.** A console that links scattered Dallas property data, shows where building distress spreads next, puts a dollar figure on it, and plans the response before it reaches the next block.
 
+**Live demo:** https://ronakkasaram.github.io/firebreak-site/ (console: [app.html](https://ronakkasaram.github.io/firebreak-site/app.html)) · **Devpost:** https://devpost.com/software/fire-break
+
 Built for the **CBRE track at HackUTD 2026**. A firebreak is the strip of land you clear ahead of a fire so it has nothing left to burn. We find the one building where acting now protects the most around it.
 
 **Start here, then go to your area:**

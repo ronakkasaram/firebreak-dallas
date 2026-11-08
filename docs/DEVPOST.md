@@ -4,6 +4,8 @@
 
 **Tagline (under 200 characters):** Property distress spreads like fire. Firebreak predicts where it spreads next in Dallas, house by house, and tells you which buildings to fix first to stop it.
 
+**Try it out:** https://ronakkasaram.github.io/firebreak-site/
+
 **Tracks:** CBRE: Predict Before It Spreads. Add up to two HackUTD tracks that fit (for example Overall, Design).
 
 ---
@@ -20,7 +22,7 @@ whether you can stop the spread before it happens.
 Firebreak is a console that goes from detecting a problem to acting on it, in five steps:
 
 1. **Detect:** every property report in Dallas, plus a live pull of reports filed today. Emerging clusters are flagged with a subset-scan statistic, and the spread rate is shown by month and council district.
-2. **Predict:** each of 241,588 buildings gets a 90-day forecast. On a quarter the model never saw, **61% of its top 2,000 got a report, against a 6.5% base rate**. A certified list promises at most 10% wrong, and it held at 7.1%.
+2. **Predict:** each of 241,588 buildings gets a 90-day forecast. On a quarter the model never saw, **61% of its top 2,000 got a report, against a 6.4% base rate**. A certified list promises at most 10% wrong, and it held at 7.1%.
 3. **Simulate:** click any building and Firebreak runs 400 possible futures for it and its neighbours. It then searches for the three "firebreaks", the repairs that spare the most reports at other houses.
 4. **Act:** give it a budget and it ranks interventions by reports prevented per dollar, exports work orders, and waits for a human to approve. A portfolio view shows owners how much of their risk comes from neighbours they don't control.
 5. **Evidence:** a model card with every test, including the ones that failed.
