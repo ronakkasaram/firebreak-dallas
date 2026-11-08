@@ -1,6 +1,6 @@
 # The contract
 
-The pipeline writes 9 files to `web/public/data/`. The console reads only these files. If you change a field, change this file in the same commit and post on the board.
+The pipeline writes 11 files to `web/public/data/` (the last two, `falcon.json` and `falcon.bin`, are optional). The console reads only these files. If you change a field, change this file in the same commit and post on the board.
 
 ## meta.json
 
@@ -142,3 +142,22 @@ Emerging clusters today (`backend/firebreak/scan.py`): expectation-based Poisson
 | `streets` | Street name and zip, no house numbers |
 | `owners` | Company portfolios with 3+ buildings: `label`, `buildings`. Never a person's name |
 | `names` | Building names from DCAD, by row in `buildings.bin` |
+
+## falcon.json and falcon.bin (optional)
+
+Written by `backend/firebreak/falcon/net.py`. This is the FALCON ST-MotionNet ("Toya") predictor, retrained on weekly frames of Dallas 311. It needs `jax`, `equinox` and `optax`. The console hides the Neural field tab when these files are missing.
+
+`falcon.json`:
+
+| Field | Meaning |
+|---|---|
+| `grid`, `cell_m` | Grid size (256) and cell size in metres |
+| `west`, `north`, `dlon`, `dlat` | Grid origin (north-west corner) and cell size in degrees. Row 0 is north. Cell `k` is row `k / grid`, column `k % grid` |
+| `layout` | `rate` (uint16 × `scale` = expected new property reports in the next 90 days), `ignite` (uint16 × `scale` = chance a cell with no report in 90 days gets 2 or more), `blind` (uint8, 1 = building cell with no report in 12 weeks) |
+| `as_of`, `cutoff` | Today, and the backtest cutoff that every training target ends before |
+| `expected_reports_90d` | Sum of `rate` |
+| `model` | `width`, `layers`, `epochs`, `frames`, `train_frames`, `val_frames`, `test_frame`, `best_val_poisson` |
+| `training_log` | Per epoch: `train`, `val_poisson`, `sec` |
+| `backtest` | Held-out quarter. `capture_top_1pct` and `capture_top_5pct`: share of next-quarter reports in the top cells for `falcon`, `boosted_sum`, `last_365_days` and `last_90_days`. `ignition`: `candidates`, `ignited`, `precision_top_100` and `precision_top_500` by ranking, and `base_rate`. `crew_search`: `crews`, `steps_per_crew`, `starts`, and per policy (`falcon`, `boosted_sum`, `last_365_days`, `random_walk`) the `cells`, `reports_found` and `ignitions_found` |
+
+`falcon.bin`: `rate` (uint16, grid²), then `ignite` (uint16, grid²), then `blind` (uint8, grid²), little-endian, at the offsets in `layout`.

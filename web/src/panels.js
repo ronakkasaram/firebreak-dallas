@@ -144,6 +144,7 @@ export function renderDetect(D, S, h) {
           <td class="r">${num(c.observed)}</td><td class="r">${c.expected.toFixed(1)}</td>
           <td class="r">${c.recurrence_weeks >= 2 ? `1 in ${c.recurrence_weeks.toFixed(0)} wk` : 'routine'}</td></tr>`).join('')}
       </tbody></table></div>
+      ${S.alarm !== null ? `<button class="btn primary pb-go" id="pb-run">Run the resolution playbook on cluster ${S.alarm + 1}</button>` : `<p class="note pb-hint">Select a cluster to run the resolution playbook on it (or press <kbd>R</kbd> for the strongest).</p>`}
       <p class="note">Counts are distinct houses with a new case, against the same cells' history scaled to the city's
         current pace. Rarity compares each score with the strongest cluster of every week in the past year.
         Backtest over ${lt.weeks || '—'} weeks: the top 3 clusters kept reporting at <b>${lt.pooled_obs_over_exp_after ?? '—'}×</b> their
@@ -170,6 +171,7 @@ export function renderDetect(D, S, h) {
         and streets are not, and saying so is part of the answer.</p>
     </div>`;
   $('panel').querySelectorAll('tr[data-a]').forEach(tr => { tr.onclick = () => h.alarm(+tr.dataset.a); });
+  const pb = $('pb-run'); if (pb) pb.onclick = () => h.playbook(S.alarm);
   const nt = $('net-toggle'); if (nt) { nt.onclick = h.network; nt.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); h.network(); } }; }
   $('panel').querySelectorAll('tr[data-b]').forEach(tr => { tr.onclick = () => h.house(+tr.dataset.b); });
   $('panel').querySelectorAll('tr[data-w]').forEach(tr => { tr.onclick = ev => { const u = ev.target.closest('[data-unw]'); if (u) { ev.stopPropagation(); h.unwatch(+u.dataset.unw); } else h.house(+tr.dataset.w); }; });
@@ -191,6 +193,24 @@ function watchPane(D, S, live) {
     <p class="note">Factor: Distress Factor today. 30 d: reports in the last 30 days. Live: new reports at the building, or expected extra reports over 90 days from new reports nearby.</p></div>`;
 }
 
+function rootPane(D, H) {
+  const rc = H.rc; if (!rc) return '';
+  const head = '<div class="sec-h"><h3>Root cause</h3><small>most likely chain of reports, Hawkes branching</small></div>';
+  if (rc.none) return `<div class="pane">${head}<p class="note">No property report here in the last year, so there is nothing to trace.</p></div>`;
+  const st = rc.steps, here = st[st.length - 1];
+  if (st.length === 1 && st[0].n === 1) return `<div class="pane">${head}<p class="note">Its latest report (${esc(here.kind)}, ${esc(here.date)}) is best explained by the
+    building's own background rate (${pct(rc.originBg)}), not by an earlier report nearby. <b>This building is an origin.</b>
+    ${rc.kids ? `Since then that report has most likely set off ${rc.kids} more within ${D.hawkes.params.radius_m} m.` : ''}</p></div>`;
+  return `<div class="pane">${head}
+    <ol class="chain">${st.map((s, k) => `<li class="${k === 0 ? 'origin' : ''} ${s.g === H.i ? 'here' : 'pick'}" ${s.g !== H.i && s.g >= 0 ? `data-g="${s.g}"` : ''}>
+      <span class="dot"></span><div><b>${k === 0 ? 'Origin · ' : ''}${s.g === H.i ? 'This building' : esc(s.g >= 0 ? D.label(s.g) : 'unplaced report')}</b>
+      <small>${s.n > 1 ? `${s.n} reports, ${esc(s.date)} to ${esc(s.lastDate)}` : `${esc(s.kind)} report, ${esc(s.date)}`}</small></div>
+      ${k < st.length - 1 ? `<em>${pct(s.p)}</em>` : ''}</li>`).join('')}</ol>
+    <p class="note">Each percentage is the chance that link set off the next one, against every other report within
+      ${D.hawkes.params.radius_m} m and the background rate. Whole chain: ${pct(rc.prob)}. The origin has most likely set off
+      ${rc.kids} report${rc.kids === 1 ? '' : 's'} so far. Fixing the origin is how you stop the next link.</p></div>`;
+}
+
 // ---------- 2. Predict ----------
 
 export function renderPredict(D, S, h) {
@@ -204,7 +224,7 @@ export function renderPredict(D, S, h) {
       ${header('Predict', `next ${meta.horizon_days} days`)}
       <p>Which buildings get a new distress report in the next 90 days, how sure we are, and how often we were right
         on a period the model never saw.</p>
-      <div class="chips" id="sub">${[['forecast', 'Forecast'], ['proof', 'Backtest'], ['certified', 'Certified list']].map(([k, t]) =>
+      <div class="chips" id="sub">${[['forecast', 'Forecast'], ['proof', 'Backtest'], ['certified', 'Certified list'], ...(D.falcon ? [['neural', 'Neural field']] : [])].map(([k, t]) =>
         `<button class="chip ${S.predict === k ? 'on' : ''}" data-k="${k}">${t}</button>`).join('')}</div>
       <div class="kpis">
         ${kpi(pct(net.watch_precision), `of top ${num(net.watch_list)} got a report`, `held-out ${meta.backtest_cutoff} · base rate ${pct(net.base_rate, 1)}`)}
@@ -213,6 +233,7 @@ export function renderPredict(D, S, h) {
         ${q10 ? kpi(pct(q10.realised_fdr, 1), 'wrong on the certified list', `promised ≤ ${pct(q10.q)} · held-out ${evidence.calibration.test_on}`) : ''}
       </div>
     </div>
+    ${S.predict === 'neural' && D.falcon ? neuralPane(D, S) : ''}
     ${cal ? `<div class="pane">
       <div class="sec-h"><h3>Calibration</h3><small>Venn–Abers, ten risk deciles</small></div>
       ${calibrationChart(cal.deciles)}
@@ -233,7 +254,70 @@ export function renderPredict(D, S, h) {
   $('sub').onclick = ev => { const k = ev.target.closest('button')?.dataset.k; if (k) h.sub(k); };
   $('filters').onclick = ev => { const c = ev.target.closest('button')?.dataset.c; if (c) h.filter(c); };
   $('panel').querySelectorAll('tr[data-k]').forEach(tr => { tr.onclick = () => h.hotspot(rows[+tr.dataset.k]); });
+  $('panel').querySelectorAll('tr[data-fc]').forEach(tr => { tr.onclick = () => h.falconCell(+tr.dataset.fc); });
+  const cr = $('crews'); if (cr) cr.onclick = h.crews;
 }
+
+function crewTable(cs) {
+  const name = { falcon: 'FALCON belief', boosted_sum: 'Boosted model', last_365_days: "Last year's hotspots", random_walk: 'Random walk' };
+  return `<div class="tw"><table class="t"><thead><tr><th>Crews follow</th><th class="r">Ignitions found</th><th class="r">Reports found</th></tr></thead><tbody>
+    ${['falcon', 'boosted_sum', 'last_365_days', 'random_walk'].filter(k => cs[k]).map(k => `<tr class="${k === 'falcon' ? 'hl' : ''}"><td>${name[k]}</td><td class="r">${cs[k].ignitions_found}</td><td class="r">${num(cs[k].reports_found)}</td></tr>`).join('')}
+  </tbody></table></div>
+  <p class="note">Backtest: ${cs.crews} crews, ${cs.steps_per_crew} cells each, on the day after the cutoff. Found means the
+    inspected cell went on to ignite (or to get reports) in the next 90 days.</p>`;
+}
+
+function neuralPane(D, S) {
+  const F = D.falcon, bt = F.backtest, c1 = bt.capture_top_1pct, c5 = bt.capture_top_5pct, ig = bt.ignition;
+  const p1 = ig.precision_top_100, p5 = ig.precision_top_500;
+  const name = { falcon: 'FALCON neural field', boosted_sum: 'Boosted model, summed per cell', last_365_days: 'Last year\'s reports', last_90_days: 'Last 90 days', buildings: 'Building count' };
+  const row = k => `<tr class="${k === 'falcon' ? 'hl' : ''}"><td>${name[k]}</td><td class="r">${c1[k] !== undefined ? pct(c1[k], 1) : '—'}</td><td class="r">${c5[k] !== undefined ? pct(c5[k], 1) : '—'}</td><td class="r">${p1[k] !== undefined ? pct(p1[k]) : '—'}</td></tr>`;
+  const best1 = Object.entries(c1).sort((x, y) => y[1] - x[1])[0][0], bestIg = Object.entries(p1).sort((x, y) => y[1] - x[1])[0][0];
+  const curve = F.training_log.map(r => r.val_poisson);
+  return `<div class="pane">
+      <div class="sec-h"><h3>FALCON neural field</h3><small>ST-MotionNet, retrained on Dallas</small></div>
+      <p class="t2">FALCON rebuilds a hidden signal field from sparse, fixed sensors. Here the field is property distress,
+        the sensors are buildings, and a reading only arrives when someone calls 311. The network sees ${F.model.frames} weekly
+        frames of a ${F.grid} × ${F.grid} grid (${Math.round(F.cell_m)} m cells) and forecasts the next 90 days for every cell,
+        including the ones nobody has called about.</p>
+      <div class="kpis">
+        ${kpi(num(F.expected_reports_90d), 'reports expected, next 90 days', 'sum of the field, today')}
+        ${kpi(pct(c1.falcon, 1), 'of next-quarter reports in its top 1% of cells', `held-out ${F.cutoff}`)}
+        ${kpi(pct(p1.falcon), 'of its top 100 ignitions came true', `base rate ${pct(ig.base_rate)}`)}
+      </div>
+      <div class="legend-inline"><span><i class="sq heatsq"></i>expected reports</span><span><i class="ring blue"></i>likely ignition</span><span><i class="ring white"></i>blind spot</span></div>
+    </div>
+    <div class="pane">
+      <div class="sec-h"><h3>Head to head, held-out quarter</h3><small>frozen ${F.cutoff}, scored on the next 90 days</small></div>
+      <div class="tw"><table class="t"><thead><tr><th>Ranking</th><th class="r">Top 1%</th><th class="r">Top 5%</th><th class="r">Ignition top 100</th></tr></thead><tbody>
+        ${['falcon', 'boosted_sum', 'last_365_days', 'last_90_days'].map(row).join('')}
+      </tbody></table></div>
+      <p class="note">Top 1% and 5%: share of the next quarter's ${num(bt.reports_next_90)} reports that land in the best-ranked cells (of
+        ${num(bt.cells_with_buildings)} with buildings). Ignition: cells with no report in the 90 days before the cutoff that then got 2 or more
+        (${num(ig.ignited)} of ${num(ig.candidates)}). Best at finding where reports pile up: <b>${name[best1]}</b>. Best at
+        calling new ignitions: <b>${name[bestIg]}</b>. We report it either way.</p>
+      ${lineChart([{ values: curve, color: '#8ab4ff' }], { labels: F.training_log.map(r => 'ep ' + r.epoch), fmt: v => v.toFixed(3) })}
+      <p class="note">Validation Poisson loss by epoch (8 held-back weeks before the cutoff picked the epoch; the test quarter was never used).</p>
+    </div>
+    <div class="pane">
+      <div class="sec-h"><h3>Where it expects a new hotspot</h3><small>localization head, today</small></div>
+      <div class="tw"><table class="t"><thead><tr><th>Near</th><th class="r">Chance</th><th class="r">90-day field</th></tr></thead><tbody>
+        ${F.igniteTop.slice(0, 10).map(k => `<tr class="pick" data-fc="${k}"><td>${esc(F.near[k] || 'unplaced cell')}<small>quiet for 90 days</small></td><td class="r">${pct(F.ignite[k])}</td><td class="r">${F.rate[k].toFixed(1)}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="sec-h" style="margin-top:12px"><h3>Blind spots</h3><small>expected to report, silent for 12 weeks</small></div>
+      <div class="tw"><table class="t"><thead><tr><th>Near</th><th class="r">Expected</th></tr></thead><tbody>
+        ${F.blindTop.slice(0, 8).map(k => `<tr class="pick" data-fc="${k}"><td>${esc(F.near[k] || 'unplaced cell')}</td><td class="r">${F.rate[k].toFixed(1)}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="sec-h" style="margin-top:12px"><h3>Send crews to find them</h3><small>FALCON search, greedy policy</small></div>
+      <button class="btn ${S.crews ? '' : 'primary'}" id="crews">${S.crews ? 'Clear crew routes' : 'Dispatch 4 crews, 150 cells each'}</button>
+      ${S.crews ? `<div class="kpis">${kpi(num(S.crews.cells), 'cells inspected', `${S.crews.km.toFixed(0)} km walked in total`)}${kpi(S.crews.ign.toFixed(1), 'expected ignitions covered', `and ${S.crews.rate.toFixed(0)} expected reports`)}</div>` : ''}
+      ${F.backtest.crew_search ? crewTable(F.backtest.crew_search) : ''}
+      <p class="note">FALCON's agents hunt for a source with the predictor's belief; here the hunters are inspection crews. Each
+        crew steps to the neighbouring cell with the most unvisited belief nearby, and visited cells drop to zero so crews fan
+        out. That is the team reward FALCON's VDN agents learn, chosen greedily here: the agents were not retrained on Dallas.</p>
+    </div>`;
+}
+
 
 // ---------- 3. Simulate ----------
 
@@ -293,6 +377,7 @@ export function renderHouse(D, H, a) {
         ${r ? kpi(stab ? '0%' : pct(pWith ?? pBase), 'simulated chance of a report', pWith !== null && !stab ? `${pct(pBase)} with no firebreaks` : r.base.medianDay ? `median first day ${r.base.medianDay}` : '') : kpi('<span class="skel" style="display:block;width:60px"></span>', 'simulating', '')}
       </div>
     </div>
+    ${rootPane(D, H)}
     ${!r ? `<div class="pane"><p class="note">${esc(H.status || 'Simulating 400 futures…')}</p></div>` : `
     <div class="pane">
       <div class="sec-h"><h3>Expected reports within 700 m</h3><small>${(areaWith ?? area).toFixed(1)}${areaWith !== null ? ` (was ${area.toFixed(1)})` : ''} · 80% of futures ${(r.withS || r.base).p10}–${(r.withS || r.base).p90}</small></div>
@@ -345,6 +430,7 @@ export function renderHouse(D, H, a) {
     </div>`}`;
   $('h-close').onclick = a.close;
   $('h-watch').onclick = () => a.watch(i);
+  $('panel').querySelectorAll('.chain li[data-g]').forEach(li => { li.onclick = () => a.open(+li.dataset.g); });
   if (!r) return;
   $('stab').onclick = a.toggle;
   $('panel').querySelectorAll('[data-shock]').forEach(el => { el.onclick = () => a.shock(+el.dataset.shock); });
@@ -510,7 +596,7 @@ function frontierChart(fr, budget) {
 function holdHtml(label, signed) {
   return `<button class="hold ${signed ? 'signed' : ''}"><span class="fill" style="width:${signed ? 100 : 0}%"></span><span class="label">${esc(label)}</span></button>`;
 }
-function wireHold(el, done, ms = 900) {
+export function wireHold(el, done, ms = 900) {
   if (!el || el.classList.contains('signed')) return;
   let t0 = 0, raf = 0;
   const fill = el.querySelector('.fill');
@@ -528,6 +614,7 @@ function renderInvestor(D, S, h) {
   if (!D.lists) { el.innerHTML = '<div class="empty">No lists.json yet.</div>'; return; }
   const L = D.lists.lists.find(l => l.id === S.list) || D.lists.lists[0];
   const bt = L.backtest || {};
+  const rows = S.leadSort === 'efc' ? [...L.leads].map(l => [l, dealMath(l).efc]).sort((x, y) => y[1] - x[1]).map(x => x[0]) : L.leads;
   el.innerHTML = `
     <p>For buyers who repair and resell: owners likely to sell before the block tips, ranked by the same spread
       signal. Owner-occupied homes are never listed; owner names stay in a private export.</p>
@@ -538,13 +625,17 @@ function renderInvestor(D, S, h) {
       ${kpi((bt.rank_lift || 0).toFixed(1) + '<small>×</small>', 'better than the rule alone', `rule alone ${pct(bt.pool_rate || 0, 1)}`)}
     </div>
     ${S.route?.kind === 'd4d' ? routeHtml(D, S.route, `Drive-for-dollars loop, ${S.route.zip}`) : `<div class="inline"><button class="btn" id="d4d">Plan a drive-for-dollars loop (densest zip)</button></div>`}
-    <div class="tw"><table class="t"><thead><tr><th>House</th><th class="r">Risk</th><th class="r">Offer</th></tr></thead><tbody>
-      ${L.leads.slice(0, 40).map((l, k) => `<tr class="pick" data-k="${k}"><td>${esc(shownAddr(l))}<small>${l.zip} · ${l.reports_365} reports · ${l.buyers_nearby} buyers nearby</small></td>
-        <td class="r">${pct(l.risk)}</td><td class="r">${l.viable ? kusd(l.offer) : '—'}</td></tr>`).join('')}
+    <div class="inline sortby"><span class="t2">Rank by</span>
+      <button class="chip ${S.leadSort !== 'efc' ? 'on' : ''}" data-s="risk">Distress signal</button>
+      <button class="chip ${S.leadSort === 'efc' ? 'on' : ''}" data-s="efc">Expected fee (WHOLZR)</button></div>
+    <div class="tw"><table class="t"><thead><tr><th>House</th><th class="r">Risk</th><th class="r">Offer</th><th class="r">Fee/contact</th></tr></thead><tbody>
+      ${rows.slice(0, 40).map((l, k) => `<tr class="pick" data-k="${k}"><td>${esc(shownAddr(l))}<small>${l.zip} · ${l.reports_365} reports · ${l.buyers_nearby} buyers nearby</small></td>
+        <td class="r">${pct(l.risk)}</td><td class="r">${l.viable ? kusd(l.offer) : '—'}</td><td class="r">${l.viable ? usd(dealMath(l).efc) : '—'}</td></tr>`).join('')}
     </tbody></table></div>`;
   $('lists').onclick = ev => { const id = ev.target.closest('button')?.dataset.l; if (id) h.list(id); };
   if ($('d4d')) $('d4d').onclick = h.d4d;
-  el.querySelectorAll('tr[data-k]').forEach(tr => { tr.onclick = () => h.lead(L.leads[+tr.dataset.k]); });
+  el.querySelectorAll('tr[data-k]').forEach(tr => { tr.onclick = () => h.lead(rows[+tr.dataset.k]); });
+  el.querySelectorAll('.sortby [data-s]').forEach(b => { b.onclick = () => h.leadSort(b.dataset.s); });
 }
 
 // ---------- 5. Evidence ----------
@@ -714,10 +805,8 @@ export function renderLead(l, D, onClose, buyersOf) {
     <ul class="rows">
       <li><span>Reports here · next door · block</span><b>${l.reports_365} · ${l.next_door_30d} · ${l.block_90d}</b></li>
       <li><span>Owner</span><b>${l.owner.label ? esc(l.owner.label) : 'private owner'} · ${l.owner.buildings} buildings${l.owner.out_of_state ? ' · out of state' : ''}</b></li>
-      <li><span>After-repair value · repairs</span><b>${usd(l.arv)} · ${usd(l.repairs)}</b></li>
-      <li><span>Offer at 70% rule</span><b>${usd(l.offer)}</b></li>
-      <li class="total"><span>Assignment fee</span><b>${l.viable ? usd(l.fee) : 'does not pencil'}</b></li>
     </ul>
+    ${dealDesk(l)}
     <div class="sec"><div class="sec-h"><h3>Natural buyers next door</h3><small>portfolios inside its 250 m spread radius</small></div>
       ${buyers.length ? `<table class="t"><tbody>${buyers.map(x => `<tr><td>${esc(x.label)}<small>${x.n} of its ${x.total} buildings within 250 m · ${kusd(x.value)} exposed</small></td><td class="r">${x.w.toFixed(2)}</td></tr>`).join('')}</tbody></table>
         <p class="note">Ranked by the spread kernel (closer buildings count more). If this house tips, these owners lose the most, so they
@@ -727,11 +816,67 @@ export function renderLead(l, D, onClose, buyersOf) {
     <p class="note">Owner names and mailing addresses never leave the private export. Nothing is mailed from here.</p>
   </div>`;
   $('d-close').onclick = () => { el.hidden = true; onClose(); };
+  const tz = $('teaser-copy');
+  if (tz) tz.onclick = async () => { try { await navigator.clipboard.writeText($('teaser').value); tz.textContent = 'Copied'; } catch { $('teaser').hidden = false; $('teaser').select(); } };
   wireHold(el.querySelector('.hold'), () => {
     queued[l.parcel_id] = new Date().toISOString(); store('fb-queued', queued);
     const btn = el.querySelector('.hold'); btn.classList.add('signed'); btn.querySelector('.label').textContent = 'Queued · a human sends';
   });
   el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ---------- WHOLZR deal desk ----------
+// The underwriting the WHOLZR engine runs on every lead (03_build/wholzr: underwriting.py, odds.py, hunt.py),
+// applied to a Firebreak lead. Discount bands and the accept formula are WHOLZR's; the motivation weights
+// and the reply rate are placeholders and say so.
+const DISCOUNT_BANDS = [[0.05, 0.40], [0.12, 0.25], [0.20, 0.12], [0.30, 0.05], [1.0, 0.02]];   // odds.py
+const BAND_LABEL = [[0.20, 'live'], [0.08, 'stretch'], [0, 'long shot']];                        // odds.py
+const REPLY_RATE = 0.10;   // hunt.py AGENT_REPLY_RATE (listing-agent emails); placeholder for direct-to-owner mail
+export function dealMath(l) {
+  const margin = Math.max(0, l.arv - l.repairs - l.buyer_price);
+  const discount = l.value > 0 ? Math.min(1, Math.max(0, 1 - l.offer / l.value)) : 1;
+  const base = DISCOUNT_BANDS.find(([lim]) => discount <= lim)[1];
+  const parts = [
+    ['reports here, last year', 0.30, Math.min(1, l.reports_365 / 3)],
+    ['block reports, 90 days', 0.25, Math.min(1, l.block_90d / 20)],
+    ['absentee owner', 0.20, l.owner.absentee ? 1 : 0],
+    ['out-of-state owner', 0.10, l.owner.out_of_state ? 1 : 0],
+    ['Firebreak 90-day risk', 0.15, Math.min(1, l.risk / 0.4)],
+  ];
+  const M = parts.reduce((a, [, w, v]) => a + w * v, 0);
+  const pAccept = Math.min(0.9, base * (0.6 + 0.8 * M));
+  const band = BAND_LABEL.find(([lim]) => pAccept >= lim)[1];
+  const efc = l.viable ? pAccept * REPLY_RATE * l.fee * (0.4 + 0.6 * l.p_two_buyers) : 0;
+  return { margin, discount, base, parts, M, pAccept, band, efc };
+}
+function dealDesk(l) {
+  const m = dealMath(l), w = v => Math.max(0, Math.min(100, v / l.arv * 100));
+  const rows = [
+    ['After-repair value', l.arv, 'arv'], ['Buyer margin', -m.margin, 'neg'], ['Repairs (placeholder tiers)', -l.repairs, 'neg'],
+    ['Buyer pays (MAO)', l.buyer_price, 'sub'], ['Assignment fee', -l.fee, 'fee'], ['Offer to seller', l.offer, 'sub'],
+  ];
+  let run = 0;
+  const bars = rows.map(([name, v, cls]) => {
+    let left, width;
+    if (cls === 'arv' || cls === 'sub') { left = 0; width = w(v); run = v; } else { run += v; left = w(run); width = w(-v); }
+    return `<div class="wf ${cls}"><span>${name}</span><div class="wf-track"><i style="left:${left}%;width:${width}%"></i></div><b>${v < 0 ? '−' : ''}${usd(Math.abs(v))}</b></div>`;
+  }).join('');
+  const teaser = [`Off-market ${l.asset_class} in ${l.zip}${l.year_built ? `, built ${l.year_built}` : ''}${l.sqft ? `, ${Math.round(l.sqft).toLocaleString()} sf` : ''}.`,
+    `ARV about ${usd(l.arv)}. Repairs about ${usd(l.repairs)} (estimate). Your price ${usd(l.buyer_price)}.`,
+    `Address after a signed non-circumvention. Reply if it fits your buy box.`].join('\n');
+  return `<div class="sec"><div class="sec-h"><h3>Deal desk</h3><small>WHOLZR underwriting</small></div>
+    <div class="waterfall">${bars}</div>
+    ${l.viable ? '' : '<p class="note">Does not pencil: the fee would push the offer below what this owner is likely to take.</p>'}
+    <div class="kpis">${kpi(pct(m.discount), 'below the DCAD value', 'what the seller must accept')}${kpi(pct(m.pAccept), `seller-side odds · ${m.band}`, `band base ${pct(m.base)} × motivation`)}${kpi(usd(m.efc), 'expected fee per contact', 'odds × reply rate × fee × buyer demand')}</div>
+    <ul class="rows mot">${m.parts.map(([n, wt, v]) => `<li><span>${n}</span><i class="mbar"><i style="width:${v * 100}%"></i></i><b>${(wt * v).toFixed(2)}</b></li>`).join('')}
+      <li class="total"><span>Motivation M</span><b>${m.M.toFixed(2)}</b></li></ul>
+    <p class="note">Discount bands and the accept formula (base × (0.6 + 0.8 M), capped at 90%) come from the WHOLZR engine.
+      Motivation weights and the ${pct(REPLY_RATE)} reply rate are placeholders. A deal only pays when two buyers say yes:
+      ${pct(l.p_two_buyers)} here, from ${l.buyers_nearby} repeat buyers nearby.</p>
+    <div class="sec-h" style="margin-top:10px"><h3>Buyer teaser</h3><small>no address until a non-circumvention</small></div>
+    <textarea id="teaser" class="brief-text" readonly hidden>${esc(teaser)}</textarea>
+    <pre class="teaser">${esc(teaser)}</pre>
+    <button class="btn" id="teaser-copy">Copy teaser</button></div>`;
 }
 
 // ---------- legend ----------
@@ -742,7 +887,10 @@ export function renderLegend(view, S, D) {
   const kinds = [0, 1, 2, 4, 5].map(k => `<div class="row"><i class="sw dot" style="background:${KIND_HEX[k]}"></i>${KIND_NAME[k]}</div>`).join('');
   const html = {
     detect: (S.network ? `<h4>Hidden network</h4><div class="row"><i class="sw" style="background:linear-gradient(90deg,#fca50a,#8ab4ff);height:3px"></i>report → same owner's other building</div><div style="height:8px"></div>` : '') + `<h4>311 property reports, last 60 days</h4>${ramp}<div class="breaks"><span>sparse</span><span>report density</span><span>dense</span></div><div style="height:6px"></div>${kinds}<div class="row"><i class="sw" style="border:1.5px solid #fcffa4"></i>emerging cluster (150 m cells)</div>`,
-    predict: S.predict === 'proof'
+    predict: S.predict === 'neural' && D.falcon ? `<h4>FALCON neural field, next 90 days</h4>${ramp}<div class="breaks"><span>fewer</span><span>expected reports per ${Math.round(D.falcon.cell_m)} m cell</span><span>more</span></div><div style="height:6px"></div>
+      <div class="row"><i class="sw dot" style="background:rgba(138,180,255,.25);border:1.75px solid #8ab4ff"></i>likely ignition (quiet 90 days)</div>
+      <div class="row"><i class="sw dot" style="border:1.5px solid #fff"></i>blind spot (expected, silent 12 weeks)</div>
+      ${S.crews ? `<div class="row"><i class="sw" style="background:linear-gradient(90deg,#8ab4ff,#009e73,#f0e442,#cc79a7);height:3px"></i>crew routes (greedy search)</div>` : ''}` : S.predict === 'proof'
       ? `<h4>Backtest from ${D.meta.backtest_cutoff}</h4><div class="row"><i class="sw" style="background:var(--open)"></i>flagged, no report yet</div><div class="row"><i class="sw" style="background:var(--hit)"></i>flagged, report landed</div>`
       : S.predict === 'certified'
         ? `<h4>Certified list</h4><div class="row"><i class="sw dot" style="background:#8ab4ff"></i>certified: ≤10% expected wrong</div><div class="row"><i class="sw" style="background:#fca50a"></i>top priority interventions</div>`

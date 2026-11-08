@@ -150,3 +150,15 @@ def test_subset_scan_finds_the_planted_cluster():
     chosen = nbr[best][np.argsort(-(c[nbr[best]] / b[nbr[best]]))[: k[best]]]
     assert set(hot) <= set(chosen)
     assert score.max() > 20
+
+
+def test_crew_search_fans_out_and_follows_belief():
+    """FALCON crew search: crews walk toward high belief and never count a cell twice."""
+    import numpy as np
+    from firebreak.falcon.net import crew_search, G
+    v = np.zeros((G, G))
+    v[100:110, 200:210] = 1.0          # a bright patch to the east of the start
+    seen = crew_search(v, [(105, 150)], steps=80)
+    hit = sum(1 for (r, c) in seen if 100 <= r < 110 and 200 <= c < 210)
+    assert hit >= 20                    # the crew found the patch and swept it
+    assert len(seen) == len(set(seen))

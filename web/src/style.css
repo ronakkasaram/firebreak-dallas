@@ -305,3 +305,77 @@ table.watch td.r { white-space: nowrap; }
   .seg .n { display: none; }
   .ph h2 { font-size: 16px; }
 }
+
+/* ---------- root cause chain ---------- */
+.chain { list-style: none; margin: 4px 0 8px; padding: 0; position: relative; }
+.chain li { display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: start; padding: 6px 4px 10px; position: relative; border-radius: 4px; }
+.chain li.pick { cursor: pointer; }
+.chain li.pick:hover { background: var(--raised); }
+.chain li:not(:last-child)::after { content: ""; position: absolute; left: 10px; top: 20px; bottom: -6px; width: 2px; background: rgba(252,165,10,.45); }
+.chain .dot { width: 10px; height: 10px; margin-top: 3px; border-radius: 50%; border: 2px solid #fca50a; background: var(--bg); z-index: 1; }
+.chain li.origin .dot { background: #fca50a; box-shadow: 0 0 0 4px rgba(252,165,10,.18); }
+.chain li.here .dot { border-color: #fff; background: #fff; }
+.chain b { display: block; font-size: 13px; font-weight: 600; }
+.chain small { display: block; font-size: 11px; color: var(--muted); }
+.chain em { font: 500 11px var(--mono); color: #fca50a; font-style: normal; align-self: end; margin-bottom: -10px; }
+
+/* ---------- resolution playbook ---------- */
+.pb-go { width: 100%; margin: 10px 0 2px; justify-content: center; }
+.pb-hint kbd { font-size: 10px; }
+.playbook { position: absolute; left: 12px; bottom: 112px; z-index: 7; width: min(440px, calc(100% - 24px)); padding: 12px 14px; max-height: calc(100% - 140px); overflow-y: auto; }
+#stage.no-time .playbook { bottom: 16px; }
+.pb-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.pb-top b { font-size: 14px; font-weight: 600; }
+.pb-tag { font: 500 10px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--accent); border: 1px solid rgba(138,180,255,.4); border-radius: 3px; padding: 1px 5px; }
+.pb-n { font: 11px var(--mono); color: var(--muted); margin-left: auto; }
+.pb-top button { height: 22px; padding: 0 6px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--raised); color: var(--text-2); font-size: 11px; }
+.pb-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.pb-steps li { display: grid; grid-template-columns: 14px 1fr; gap: 9px; padding: 5px 0; }
+.pb-steps li > i { width: 10px; height: 10px; margin-top: 3px; border-radius: 50%; border: 1.5px solid var(--line-2); }
+.pb-steps li.run > i { border-color: var(--accent); border-top-color: transparent; animation: pbspin .8s linear infinite; }
+.pb-steps li.ok > i { background: #009e73; border-color: #009e73; }
+.pb-steps li.err > i { background: #d55e00; border-color: #d55e00; }
+.pb-steps li.wait { opacity: .45; }
+.pb-steps b { font-size: 12.5px; font-weight: 600; }
+.pb-steps code { font: 10.5px var(--mono); color: var(--muted); margin-left: 4px; }
+.pb-steps small { display: block; font-size: 11.5px; color: var(--text-2); margin-top: 2px; line-height: 1.4; }
+@keyframes pbspin { to { transform: rotate(360deg); } }
+.pb-sum { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 10px; }
+.pb-id { font: 500 11px var(--mono); color: var(--muted); margin-bottom: 6px; }
+.pb-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+.pb-kpis b { display: block; font: 600 15px var(--mono); }
+.pb-kpis small { font-size: 10.5px; color: var(--muted); }
+.pb-case .inline { flex-wrap: wrap; }
+@media (max-width: 700px) { .playbook { left: 8px; right: 8px; width: auto; } .pb-kpis { grid-template-columns: repeat(2, 1fr); } }
+#stage:has(#playbook) .legend { display: none; }
+.playbook { top: 12px; bottom: auto; max-height: calc(100% - 136px); }
+
+/* ---------- WHOLZR deal desk ---------- */
+.waterfall { display: grid; gap: 5px; margin: 6px 0 10px; }
+.wf { display: grid; grid-template-columns: 140px 1fr 78px; gap: 8px; align-items: center; font-size: 12px; }
+.wf span { color: var(--text-2); }
+.wf b { font: 500 12px var(--mono); text-align: right; }
+.wf-track { position: relative; height: 10px; background: var(--raised); border-radius: 2px; }
+.wf-track i { position: absolute; top: 0; bottom: 0; border-radius: 2px; background: #5b6170; }
+.wf.arv .wf-track i { background: #8ab4ff; }
+.wf.sub .wf-track i { background: #009e73; }
+.wf.neg .wf-track i { background: #d55e00; opacity: .8; }
+.wf.fee .wf-track i { background: #fca50a; }
+.wf.sub span, .wf.sub b { color: var(--text); font-weight: 600; }
+.rows.mot li { display: grid; grid-template-columns: 1fr 70px 40px; gap: 8px; align-items: center; }
+.rows.mot li.total { grid-template-columns: 1fr 40px; }
+.mbar { display: block; height: 5px; background: var(--raised); border-radius: 3px; overflow: hidden; }
+.mbar i { display: block; height: 100%; background: #fca50a; }
+pre.teaser { white-space: pre-wrap; font: 12px/1.5 var(--mono); color: var(--text-2); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 6px 0 8px; }
+.sortby { gap: 6px; align-items: center; margin: 8px 0 4px; }
+
+/* ---------- FALCON neural field ---------- */
+.legend-inline { display: flex; flex-wrap: wrap; gap: 14px; font-size: 11.5px; color: var(--text-2); margin-top: 8px; }
+.legend-inline i { display: inline-block; vertical-align: -2px; margin-right: 6px; }
+.legend-inline .sq { width: 11px; height: 11px; border-radius: 2px; }
+.legend-inline .heatsq { background: linear-gradient(135deg, #bc3754, #fca50a, #fcffa4); }
+.legend-inline .ring { width: 11px; height: 11px; border-radius: 50%; border: 1.75px solid; }
+.legend-inline .ring.blue { border-color: #8ab4ff; background: rgba(138,180,255,.18); }
+.legend-inline .ring.white { border-color: #fff; }
+table.t tr.hl td { color: var(--text); font-weight: 600; }
+table.t tr.hl td:first-child { box-shadow: inset 2px 0 0 #8ab4ff; }

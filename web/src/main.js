@@ -8,11 +8,13 @@ import { HexagonLayer, HeatmapLayer } from '@deck.gl/aggregation-layers';
 import { DataFilterExtension } from '@deck.gl/extensions';
 import { load, dayToDate, dateToDay } from './data.js';
 import {
-  $, esc, pct, kusd, fmtDate, CLASS, factorOf, factorWord, KIND_HEX, HEAT, LIST_HEX, DEFAULT_COSTS, store,
+  $, esc, pct, kusd, usd, wireHold, fmtDate, CLASS, factorOf, factorWord, KIND_HEX, HEAT, LIST_HEX, DEFAULT_COSTS, store,
   renderIntro, renderDetect, renderPredict, renderSimulateIdle, renderHouse, renderAct, renderEvidence, renderDossier, renderLead, renderLegend,
 } from './panels.js';
 import { pullLive, replayLive } from './live.js';
+import { chain, childrenOf, latestReport, clusterOrigins, KIND_OF } from './rootcause.js';
 import { startTour, stopTour, tourActive } from './tour.js';
+import { startPlaybook, stopPlaybook, playbookActive } from './playbook.js';
 import './style.css';
 
 const STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
@@ -32,6 +34,7 @@ const M_LON = 111320 * Math.cos(32.78 * Math.PI / 180), M_LAT = 111320;
 const rgb = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 const KIND_RGB = KIND_HEX.map(rgb);
 const HEAT_RGB = HEAT.map(rgb);
+const CREW_RGB = ['#8ab4ff', '#009e73', '#f0e442', '#cc79a7'].map(h => [...rgb(h), 235]);
 const ACCENT = rgb('#8ab4ff'), STAB = rgb('#009e73'), HIT = rgb('#56b4e9'), OPEN = rgb('#e69f00'), PRIORITY = rgb('#fca50a');
 const HK_TO_KIND = [0, 1, 2, 4, 5];
 function heat(t, a = 255) { // 0..1 on the inferno ramp
@@ -187,7 +190,26 @@ function layers() {
         pickable: true, parameters: { depthTest: false },
       }));
     }
-    if (S.predict !== 'proof') {
+    if (S.predict === 'neural' && D.falcon) {
+      const F = D.falcon, half = F.cell_m * 0.62;
+      out.push(new ColumnLayer({
+        id: 'neural-field', data: F.top, getPosition: k => F.center(k), getElevation: k => F.rate[k],
+        elevationScale: 60 * Math.max(0.3, zf()), radius: half, diskResolution: 4, angle: 45, extruded: map.getPitch() > 5,
+        getFillColor: k => { const t = Math.min(1, Math.log1p(F.rate[k]) / Math.log1p(F.rateHi)); return heat(t, 70 + 185 * t); },
+        material: { ambient: 0.6, diffuse: 0.5, shininess: 8 }, pickable: true,
+      }));
+      out.push(new ScatterplotLayer({
+        id: 'neural-blind', data: F.blindTop, getPosition: k => F.center(k), getRadius: F.cell_m * 0.75, radiusMinPixels: 5,
+        filled: false, stroked: true, getLineColor: [255, 255, 255, 200], lineWidthMinPixels: 1.25, parameters: { depthTest: false }, pickable: true,
+      }));
+      if (S.crews) out.push(new PathLayer({ id: 'crews', data: S.crews.paths, getPath: p => p, getColor: (p, { index }) => CREW_RGB[index % 4],
+        getWidth: 3, widthMinPixels: 2, jointRounded: true, capRounded: true, parameters: { depthTest: false } }));
+      out.push(new ScatterplotLayer({
+        id: 'neural-ignite', data: F.igniteTop, getPosition: k => F.center(k), getRadius: F.cell_m * 0.9, radiusMinPixels: 6,
+        filled: true, stroked: true, getFillColor: [...ACCENT, 40], getLineColor: [...ACCENT, 255], lineWidthMinPixels: 1.75, parameters: { depthTest: false }, pickable: true,
+      }));
+    }
+    if (S.predict !== 'proof' && S.predict !== 'neural') {
       const shown = hotspots.filter(h => S.filter === 'all' || h.asset_class === S.filter);
       out.push(new ColumnLayer({
         id: 'hotspots', data: shown, pickable: true, autoHighlight: true, highlightColor: [255, 255, 255, 255],
@@ -244,7 +266,7 @@ function layers() {
     }
   }
 
-  if (v === 'act' && S.route && ((S.act === 'brief' && S.route.kind === 'inspect') || (S.act === 'investor' && S.route.kind === 'd4d'))) {
+  if (S.route && (S.route.kind === 'case' || (v === 'act' && ((S.act === 'brief' && S.route.kind === 'inspect') || (S.act === 'investor' && S.route.kind === 'd4d'))))) {
     const path = S.route.order.map(i => [b.lon[i], b.lat[i]]);
     out.push(new PathLayer({ id: 'route-under', data: [path], getPath: d => d, getColor: [11, 12, 14, 255], getWidth: 7, widthUnits: 'pixels', parameters: { depthTest: false } }));
     out.push(new PathLayer({ id: 'route', data: [path], getPath: d => d, getColor: [...ACCENT, 255], getWidth: 3, widthUnits: 'pixels', jointRounded: true, capRounded: true, parameters: { depthTest: false } }));
@@ -310,6 +332,15 @@ function houseLayers() {
   }
   if (!H) return out;
   const fx = [b.lon[H.i], b.lat[H.i]];
+  const rc = H.rc?.steps;
+  if (rc?.length > 1) {
+    out.push(new PathLayer({ id: 'root-path', data: [rc.map(s => [s.lon, s.lat])], getPath: d => d, getColor: [...PRIORITY, 230],
+      getWidth: 3, widthMinPixels: 2.5, capRounded: true, jointRounded: true, parameters: { depthTest: false } }));
+    out.push(new ScatterplotLayer({ id: 'root-steps', data: rc, getPosition: s => [s.lon, s.lat], pickable: true,
+      getRadius: (s, { index }) => index === 0 ? 16 : 9, radiusMinPixels: 4, stroked: true, filled: true,
+      getFillColor: (s, { index }) => index === 0 ? [...PRIORITY, 255] : [20, 22, 26, 255], getLineColor: [...PRIORITY, 255], lineWidthMinPixels: 1.5,
+      parameters: { depthTest: false } }));
+  }
   out.push(new ScatterplotLayer({
     id: 'house-rings', data: [{ r: 700, a: 70 }, { r: 250, a: 170 }], getPosition: () => fx, getRadius: d => d.r,
     stroked: true, filled: false, getLineColor: d => [...ACCENT, d.a], lineWidthMinPixels: 1,
@@ -461,7 +492,9 @@ function setPlaying(on) {
 const handlers = {
   alarm: k => pickAlarm(k),
   house: i => openHouse(i),
-  sub: k => { if (S.view === 'predict') { S.predict = k; S.day = k === 'proof' ? cutoffDay : todayDay + 45; } else { S.act = k; if (k === 'plan') computePlan(); if (k === 'brief') setBrief(S.brief?.d || worstDistrict()); } render(); },
+  crews: () => { if (S.crews) { S.crews = null; render(); redraw(); } else dispatchCrews(); },
+  falconCell: k => { const [lon, lat] = D.falcon.center(k); fly(lon, lat, 15.2); },
+  sub: k => { if (S.view === 'predict') { S.predict = k; S.day = k === 'proof' ? cutoffDay : todayDay + 45; if (k === 'neural') home(); } else { S.act = k; if (k === 'plan') computePlan(); if (k === 'brief') setBrief(S.brief?.d || worstDistrict()); } render(); },
   filter: c => { S.filter = c; render(); },
   hotspot: x => pickHotspot(x),
   budget: v => { S.plan.budget = v; computePlan(false); render(); },
@@ -473,6 +506,8 @@ const handlers = {
   copyBrief: async btn => { const t = briefText(S.brief.B); try { await navigator.clipboard.writeText(t); btn.textContent = 'Copied'; } catch { $('brief-text').hidden = false; } },
   tour: () => runTour(),
   unwatch: i => { toggleWatch(i); render(); redraw(); },
+  playbook: k => runPlaybook(k),
+  leadSort: k => { S.leadSort = k; render(); },
   network: () => { S.network = !S.network; if (S.network) { ownerNetwork(); home(); } render(); },
   route: n => { if (S.act === 'brief') setRoute('inspect', S.brief.B.allRows.slice(0, n).map(x => x.i)); render(); },
   d4d: () => {
@@ -582,6 +617,7 @@ function houseActions() {
       sim.postMessage({ type: 'firebreaks', i: H.i, k: 3, stab: H.stab.filter(g => g !== H.i) });
     },
     fly: g => fly(D.b.lon[g], D.b.lat[g], 16.4),
+    open: g => openHouse(g),
   };
 }
 function runSim() {
@@ -603,12 +639,30 @@ function onSim({ data: msg }) {
 }
 function pickHouse(i) {
   const prev = S.house;
-  S.house = { i, stab: prev ? prev.stab : [], res: null, fb: null, busy: true, status: '', shock: 0 };
+  S.house = { i, stab: prev ? prev.stab : [], res: null, fb: null, busy: true, status: '', shock: 0, rc: rootOf(i) };
   if (!prev || Math.hypot((D.b.lon[prev.i] - D.b.lon[i]) * M_LON, (D.b.lat[prev.i] - D.b.lat[i]) * M_LAT) > 400) {
     S.house.stab = []; fly(D.b.lon[i], D.b.lat[i], 15.6);
   }
   if (!sim) { S.house.status = 'Simulator needs hawkes.json and the mu column.'; renderHouse(D, S.house, houseActions()); return; }
   runSim(); drawHist(); redraw();
+}
+// Root cause of a building's latest report: the chain of earlier reports that most likely set it off.
+function stepInfo(j, p) {
+  const e = D.e, g = e.b[j];
+  return { j, g, p, lon: e.lon[j], lat: e.lat[j], date: fmtDate(dayToDate(D.meta, e.day[j])), kind: KIND_OF(e.kind[j]) };
+}
+function rootOf(i) {
+  if (!D.hawkes?.params || !D.e.new_case) return null;
+  const j = latestReport(D, i, todayDay);
+  if (j < 0) return { none: true };
+  const c = chain(D, j);
+  // Repeat reports at one building are one link in the story: merge consecutive steps at the same building.
+  const steps = [];
+  for (const x of c.steps.map(t => stepInfo(t.j, t.p))) {
+    const last = steps[steps.length - 1];
+    if (last && last.g === x.g && x.g >= 0) { last.n++; last.p = x.p; last.lastDate = x.date; } else steps.push({ ...x, n: 1, lastDate: x.date });
+  }
+  return { steps, prob: c.prob, originBg: c.originBg, kids: childrenOf(D, c.origin, 120).length };
 }
 function openHouse(i, opts = {}) {
   $('detail').hidden = true;
@@ -867,6 +921,164 @@ function watchRows() {
   return [...rows.values()].sort((x, y) => (y.liveN - x.liveN) || (y.live - x.live) || (y.n30 - x.n30) || (D.b.risk[y.i] - D.b.risk[x.i]));
 }
 
+// ---------- FALCON crew search ----------
+// FALCON's agents hunt for a signal's source using the predictor's belief. Here 4 crews walk the grid one
+// cell (about 150 m) per step for 150 steps, each moving to the neighbour with the most unvisited belief
+// nearby; a visited cell's belief drops to zero, so crews fan out. Same greedy policy as the backtest in
+// backend/firebreak/falcon/net.py, run on today's field.
+function dispatchCrews(crews = 4, steps = 150, look = 4) {
+  const F = D.falcon, G = F.grid, V = new Float64Array(G * G);
+  for (let k = 0; k < G * G; k++) V[k] = F.ignite[k] + 1e-3 * F.rate[k];
+  const st = F.backtest?.crew_search?.starts || (() => {
+    let sy = [], sx = [];
+    for (let k = 0; k < G * G; k++) if (F.rate[k] > 0) { sy.push(Math.floor(k / G)); sx.push(k % G); }
+    const med = a => a.sort((x, y) => x - y)[a.length >> 1], cy = med(sy), cx = med(sx);
+    return [[cy - 40, cx - 40], [cy - 40, cx + 40], [cy + 40, cx - 40], [cy + 40, cx + 40]];
+  })();
+  const pos = st.slice(0, crews).map(([r, c]) => [r, c]), paths = pos.map(p => [p.slice()]);
+  let ign = 0, rate = 0, cells = 0;
+  const take = (r, c) => { const k = r * G + c; if (V[k] >= 0) { cells++; ign += F.ignite[k]; rate += F.rate[k]; } V[k] = -1; };
+  pos.forEach(([r, c]) => take(r, c));
+  const DISC = [1, 0.6, 0.36, 0.216, 0.13, 0.078];
+  const near = (r, c) => {
+    let m = 0;
+    for (let y = Math.max(0, r - look); y <= Math.min(G - 1, r + look); y++) for (let x = Math.max(0, c - look); x <= Math.min(G - 1, c + look); x++) {
+      const d = Math.max(Math.abs(y - r), Math.abs(x - c)); if (!d) continue;
+      const v = V[y * G + x] * DISC[d]; if (v > m) m = v;
+    }
+    return m;
+  };
+  for (let t = 0; t < steps; t++) {
+    for (const p of pos) {
+      let best = null, bv = -Infinity;
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        if (!dr && !dc) continue;
+        const r = p[0] + dr, c = p[1] + dc; if (r < 0 || c < 0 || r >= G || c >= G) continue;
+        const v = Math.max(0, V[r * G + c]) + near(r, c);
+        if (v > bv) { bv = v; best = [r, c]; }
+      }
+      if (bv < 1e-6) {             // nothing within sight: head for the best remaining cell
+        let bk = 0; for (let k = 1; k < G * G; k++) if (V[k] > V[bk]) bk = k;
+        best = [p[0] + Math.sign(Math.floor(bk / G) - p[0]), p[1] + Math.sign((bk % G) - p[1])];
+      }
+      p[0] = best[0]; p[1] = best[1]; take(p[0], p[1]);
+    }
+    pos.forEach((p, a) => paths[a].push(p.slice()));
+  }
+  const toLL = ([r, c]) => [F.west + (c + 0.5) * F.dlon, F.north - (r + 0.5) * F.dlat];
+  S.crews = { paths: paths.map(pp => pp.map(toLL)), ign, rate, cells, km: crews * steps * F.cell_m / 1000 };
+  render(); redraw();
+}
+
+// ---------- resolution playbook ----------
+// Turns an alarm into a case: trace the cluster to its origin, simulate the origin, find firebreaks, cost
+// them, route a crew, and stop at a human approval. Each step calls the same code a person would click.
+const pause = ms => new Promise(r => setTimeout(r, ms));
+const waitFor = (f, ms = 30000) => new Promise((res, rej) => {
+  const t0 = performance.now();
+  const tick = () => {
+    if (!playbookActive()) return rej(new Error('stopped'));
+    const v = f(); if (v) return res(v);
+    if (performance.now() - t0 > ms) return rej(new Error('timed out waiting for the simulator'));
+    setTimeout(tick, 250);
+  };
+  tick();
+});
+function clusterBuildings(c) {
+  const half = (D.alarms.cell_m || 150) / 2, e = D.e, out = new Set();
+  for (let j = lowerDay(todayDay - c.window_days + 1); j < D.m; j++) {
+    if (e.kind[j] === 6 || e.b[j] < 0 || !e.new_case[j]) continue;
+    for (const [lon, lat] of c.cells) {
+      if (Math.abs((e.lon[j] - lon) * M_LON) <= half && Math.abs((e.lat[j] - lat) * M_LAT) <= half) { out.add(e.b[j]); break; }
+    }
+  }
+  return [...out];
+}
+function runPlaybook(k) {
+  if (k === null || k === undefined || !D.alarms?.clusters?.[k]) return;
+  stopTour();
+  const c = D.alarms.clusters[k];
+  const costOf = g => { const cl = D.b.class[g]; return cl === 0 ? S.plan.costs.home : cl === 1 ? S.plan.costs.multifamily : S.plan.costs.commercial; };
+  const steps = [
+    { name: 'Read the alarm', tool: 'scan.cluster', run: async x => {
+      setView('detect'); if (S.alarm !== k) pickAlarm(k); await pause(800);
+      x.gs = clusterBuildings(c);
+      return `${c.observed} houses with a new case in ${c.window_days} days, where ${c.expected.toFixed(1)} were expected. ${x.gs.length} of them placed on buildings for tracing.`;
+    } },
+    { name: 'Trace the root cause', tool: 'hawkes.branching', run: async x => {
+      const st = clusterOrigins(D, x.gs, todayDay), top = st.roots[0];
+      if (!top) throw new Error('No report in this cluster traces to a placed building.');
+      x.story = st; x.origin = top.g;
+      S.highlight = st.roots.slice(0, 6).map(r => r.g); redraw(); await pause(900);
+      return `${st.roots.length} origin${st.roots.length === 1 ? '' : 's'}. ${top.n} of ${st.traced} cases trace back to ${esc(label(top.g))} (${pct(top.n / st.traced)}).`;
+    } },
+    { name: 'Simulate the origin', tool: 'sim.monteCarlo', run: async x => {
+      openHouse(x.origin);
+      const r = await waitFor(() => S.house?.i === x.origin && !S.house.busy && S.house.res);
+      x.area = r.base.cumDaily[90];
+      return `${x.area.toFixed(1)} expected reports within 700 m over 90 days, from ${RUNS} simulated futures.`;
+    } },
+    { name: 'Find firebreaks', tool: 'sim.celf', run: async x => {
+      houseActions().firebreaks();
+      let H = await waitFor(() => S.house?.fb && S.house.res?.withS && !S.house.busy && S.house, 90000);
+      x.picks = H.fb.picks.map(p => p.g);
+      // Fix the origin as well, so the case's benefit covers every work order it pays for.
+      if (!H.stab.includes(H.i)) {
+        const fb = H.fb; H.res = null; houseActions().toggle();
+        H = await waitFor(() => S.house?.res?.withS && !S.house.busy && S.house, 60000);
+        H.fb = fb; if (S.view === 'simulate') renderHouse(D, H, houseActions());
+      }
+      x.prevented = H.res.prevented; x.protectedUsd = H.res.protectedUsd;
+      return `Origin plus ${x.picks.length} firebreaks: ${x.prevented.toFixed(1)} fewer reports within 700 m over 90 days, ${kusd(x.protectedUsd)} of neighbour value protected.`;
+    } },
+    { name: 'Cost the case', tool: 'plan.cost', run: async x => {
+      x.actions = [...new Set([x.origin, ...x.picks])];
+      x.cost = x.actions.reduce((a, g) => a + costOf(g), 0);
+      return `${x.actions.length} work orders, ${kusd(x.cost)} at your repair costs (placeholders, editable in Act): ${kusd(x.cost / Math.max(x.prevented, 0.1))} per report prevented.`;
+    } },
+    { name: 'Route a crew', tool: 'route.twoOpt', run: async x => {
+      const extra = x.gs.filter(g => !x.actions.includes(g)).sort((a, b) => D.b.risk[b] - D.b.risk[a]).slice(0, Math.max(0, 12 - x.actions.length));
+      setRoute('case', [...x.actions, ...extra]); x.route = S.route; redraw(); await pause(900);
+      return `${x.route.order.length} stops (work orders plus the cluster's riskiest buildings): ${x.route.km.toFixed(1)} km, about ${(x.route.minutes / 60).toFixed(1)} h. Drive speed and stop time are placeholders.`;
+    } },
+  ];
+  const id = `FB-${D.meta.as_of.replace(/-/g, '')}-C${k + 1}`;
+  startPlaybook(`Cluster ${k + 1}`, steps, {
+    onClose: () => { S.highlight = null; if (S.route?.kind === 'case') S.route = null; redraw(); },
+    onDone: x => {
+      const text = caseText(id, c, x);
+      const signed = (store('fb-cases') || {})[id];
+      return {
+        html: `<div class="pb-case"><div class="pb-id">${id}</div>
+          <div class="pb-kpis"><div><b>${x.actions.length}</b><small>work orders</small></div><div><b>${kusd(x.cost)}</b><small>cost</small></div>
+          <div><b>${x.prevented.toFixed(1)}</b><small>reports prevented</small></div><div><b>${x.route.km.toFixed(1)} km</b><small>crew route</small></div></div>
+          <div class="inline"><button class="btn" data-a="copy-case">Copy case</button><a class="btn" href="${x.route.link}" target="_blank" rel="noopener">Open route</a>
+          <button class="hold ${signed ? 'signed' : ''}" id="pb-hold"><span class="fill" style="${signed ? 'width:100%' : ''}"></span><span>${signed ? 'Approved ' + signed.slice(0, 10) : 'Hold to approve'}</span></button></div>
+          <p class="note">Nothing is sent. Approval records the case in this browser, for a person to hand to the crew.</p></div>`,
+        wire: el => {
+          el.querySelector('[data-a=copy-case]').onclick = async ev => { try { await navigator.clipboard.writeText(text); ev.target.textContent = 'Copied'; } catch { ev.target.textContent = 'Copy blocked'; } };
+          wireHold(el.querySelector('#pb-hold'), () => {
+            const all = store('fb-cases') || {}; all[id] = new Date().toISOString(); store('fb-cases', all);
+            const h = el.querySelector('#pb-hold'); h.classList.add('signed'); h.querySelector('span:last-child').textContent = 'Approved ' + all[id].slice(0, 10);
+          });
+        },
+      };
+    },
+  });
+}
+function caseText(id, c, x) {
+  const L = g => label(g);
+  return [`# Case ${id}`, '',
+    `Alarm: ${x.gs.length} buildings with a new case in ${c.window_days} days, ${c.expected.toFixed(1)} expected.`,
+    `Root cause: ${x.story.roots[0].n} of ${x.story.traced} cases trace back to ${L(x.origin)}.`,
+    `Without action: ${x.area.toFixed(1)} expected reports within 700 m over 90 days.`,
+    `Fixing the origin and the firebreaks: ${x.prevented.toFixed(1)} fewer, ${kusd(x.protectedUsd)} of neighbour value protected.`, '',
+    '## Work orders', ...x.actions.map((g, n) => `${n + 1}. ${L(g)} (${CLASS[D.b.class[g]]})${g === x.origin ? ', origin' : ''}`), '',
+    `Cost: ${kusd(x.cost)} at placeholder repair costs.`,
+    `Crew route: ${x.route.order.length} stops, ${x.route.km.toFixed(1)} km. ${x.route.link}`, '',
+    'Generated by Firebreak from Dallas 311 and the DCAD roll. Nothing has been sent.'].join('\n');
+}
+
 // ---------- council district brief ----------
 
 function districtBounds(d) {
@@ -930,6 +1142,7 @@ function setBrief(d) {
 
 function runTour() {
   if (introClose) { introClose(); introClose = null; }
+  stopPlaybook();
   const m = D.meta, net = m.model.network, num = v => Math.round(v).toLocaleString();
   const top = D.alarms?.clusters?.[0], hot = D.hotspots[0];
   const steps = [
@@ -937,12 +1150,20 @@ function runTour() {
       text: () => `${num(m.counts.buildings)} buildings from the appraisal roll and ${num(m.counts.reports)} property reports from 311. The two systems share no IDs; Firebreak joins them by address. The heat is report density over the last 60 days.` },
     { title: 'Distress clusters, and spreads', ms: 9000, run: () => { setPlaying(false); S.day = todayDay; if (top) pickAlarm(0); else render(); },
       text: () => top ? `Cluster 1: ${top.observed} houses with a new case in ${top.window_days} days where ${top.expected.toFixed(1)} were expected. A report next door raises a building's odds ${m.edges.block.ratio.toFixed(2)}×; one at another building with the same owner, ${m.edges.owner.ratio.toFixed(2)}×.` : '' },
-    { title: 'The hidden network', ms: 9000, run: () => { S.alarm = null; S.network = true; ownerNetwork(); home(); render(); },
+    { title: 'Trace it to the origin', ms: 9000, run: () => {
+        if (!top) return;
+        const st = clusterOrigins(D, clusterBuildings(top), todayDay); D.tourOrigins = st;
+        S.highlight = st.roots.slice(0, 6).map(r => r.g); redraw();
+      },
+      text: () => { const st = D.tourOrigins, r = st?.roots?.[0]; return r ? `Like an incident tool tracing an outage to the service where it began: ${r.n} of the cluster's ${st.traced} cases trace back, report by report, to ${esc(label(r.g))} (blue rings). Press R and an agent turns that into a costed, routed case.` : ''; } },
+    { title: 'The hidden network', ms: 9000, run: () => { S.alarm = null; S.highlight = null; S.network = true; ownerNetwork(); home(); render(); },
       text: () => `${num(D.ownerNet.links)} buildings share an owner with a building that had a report this year, across ${num(D.ownerNet.owners)} company portfolios. A report at one raises the others' odds ${m.edges.owner.ratio.toFixed(2)}× (pooled over 4 test quarters). These are the dependencies CBRE's brief calls undetectable.` },
     { title: 'The next 90 days', ms: 8000, run: () => { S.network = false; S.predict = 'forecast'; setView('predict'); S.day = todayDay + m.horizon_days; home(); render(); },
       text: () => `${num(D.expected)} new property reports expected citywide. Height and heat: expected reports per 260 m hex.` },
     { title: 'Proof on data it never saw', ms: 10000, run: () => { S.predict = 'proof'; setView('predict'); S.day = cutoffDay; render(); S.speed = 3; setPlaying(true); },
       text: () => `Frozen on ${fmtDate(new Date(m.backtest_cutoff))}. ${pct(net.watch_precision)} of its top ${num(net.watch_list)} got a report within 90 days, against a ${pct(net.base_rate, 1)} base rate. Blue: the report landed.` },
+    ...(D.falcon ? [{ title: 'A neural network that sees blind spots', ms: 10000, run: () => { setPlaying(false); S.predict = 'neural'; setView('predict'); S.day = todayDay + 45; home(); render(); },
+      text: () => `FALCON, our sparse-sensor research model, retrained on Dallas: buildings are sensors that only report when someone calls. It forecasts all ${num(D.falcon.backtest.cells_with_buildings)} built-up cells, and rings the quiet ones most likely to ignite next (blue).` }] : []),
     { title: 'One building, 400 futures', ms: 15000, run: () => {
         setPlaying(false); openHouse(hot.i);
         const t0 = performance.now(), wait = () => { if (!tourActive()) return; if (S.house?.res && !S.house.fb && !S.house.busy) houseActions().firebreaks(); else if (performance.now() - t0 < 9000) setTimeout(wait, 400); };
@@ -989,6 +1210,7 @@ const ACTIONS = [
   { label: 'Predict: replay the backtest', run: () => { S.predict = 'proof'; setView('predict'); S.day = cutoffDay; render(); setPlaying(true); } },
   { label: 'Detect: show the hidden owner network', key: 'N', run: () => { setView('detect'); handlers.network(); } },
   { label: 'Detect: my watchlist', run: () => { setView('detect'); requestAnimationFrame(() => [...document.querySelectorAll('#panel .pane')].find(p => p.innerText.startsWith('Watchlist'))?.scrollIntoView({ behavior: 'smooth' })); } },
+  { label: 'Run the resolution playbook on the strongest cluster', key: 'R', run: () => runPlaybook(S.alarm ?? 0) },
   { label: 'Start the guided tour', key: 'T', run: () => runTour() },
   { label: 'Play or pause time', key: 'Space', run: () => range() && $('play').click() },
   { label: 'Toggle 2D / 3D', key: 'P', run: () => togglePitch() },
@@ -1092,6 +1314,20 @@ async function main() {
   D.bColor = new Uint8Array(n * 4);
   for (let i = 0; i < n; i++) D.bColor.set(b.class[i] === 0 ? [92, 97, 108, 80] : [140, 146, 158, 130], 4 * i);
   D.expected = b.risk.reduce((a, r) => a + r / 255, 0);
+  if (D.falcon) {
+    const F = D.falcon, G = F.grid, idx = Array.from({ length: G * G }, (_, k) => k);
+    F.top = idx.filter(k => F.rate[k] >= 0.25).sort((x, y) => F.rate[y] - F.rate[x]).slice(0, 8000);
+    F.rateHi = F.rate[F.top[Math.floor(F.top.length * 0.02)]] || 1;
+    F.igniteTop = idx.filter(k => F.ignite[k] > 0).sort((x, y) => F.ignite[y] - F.ignite[x]).slice(0, 40);
+    F.blindTop = idx.filter(k => F.blind[k]).sort((x, y) => F.rate[y] - F.rate[x]).slice(0, 40);
+    // Name each listed cell after the nearest building, so the tables read as places.
+    F.near = {};
+    for (const k of [...F.igniteTop, ...F.blindTop]) {
+      const [lon, lat] = F.center(k); let best = -1, bd = 1e18;
+      for (let i = 0; i < D.n; i++) { const dx = (b.lon[i] - lon) * M_LON, dy = (b.lat[i] - lat) * M_LAT, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = i; } }
+      if (best >= 0 && bd < (F.cell_m * 1.5) ** 2) F.near[k] = label(best);
+    }
+  }
   D.recent7 = 0; D.recent7prev = 0;
   for (let j = 0; j < m; j++) { if (e.kind[j] === 6) continue; const d = todayDay - e.day[j]; if (d >= 0 && d < 7) D.recent7++; else if (d >= 7 && d < 14) D.recent7prev++; }
   D.certifiedIdx = D.evidence?.live?.certified_idx || (b.certified ? D.allIdx.filter(i => b.certified[i]) : []);
@@ -1180,9 +1416,11 @@ async function main() {
     if (ev.key === 'p' || ev.key === 'P') togglePitch();
     if (ev.key === 'n' || ev.key === 'N') { if (S.view !== 'detect') setView('detect'); handlers.network(); }
     if (ev.key === 't' || ev.key === 'T') runTour();
+    if (ev.key === 'r' || ev.key === 'R') runPlaybook(S.alarm ?? 0);
     if (ev.key === 'h' || ev.key === 'H') home();
     if (ev.key === 'Escape') {
       if (tourActive()) { stopTour(); return; }
+      if (playbookActive()) { stopPlaybook(); return; }
       if (!$('detail').hidden) { $('detail').hidden = true; S.selected = null; S.lead = null; redraw(); }
       else if (S.house) houseActions().close();
       else if (S.alarm !== null) { S.alarm = null; render(); }
@@ -1243,6 +1481,10 @@ function tooltip(info) {
     return box(`<b>${esc(label(g))}</b><br>${pct((r.withS || r.base).pBy[t * r.N + object])} chance of a report by day ${t}`);
   }
   if ((id === 'route-stops') && object !== undefined) { const k = S.route.order.indexOf(object); return box(`<b>Stop ${k + 1}</b><br>${esc(label(object))}`); }
+  if (id === 'root-steps' && object) return box(`<b>${object.g === S.house?.i ? 'This building' : esc(label(object.g))}</b><br>${esc(object.kind)} report, ${esc(object.date)}`);
+  if (id === 'neural-field' && object !== undefined) return box(`<b>${D.falcon.rate[object].toFixed(1)} expected reports</b><br>next 90 days, this ${Math.round(D.falcon.cell_m)} m cell (FALCON)`);
+  if (id === 'neural-ignite' && object !== undefined) return box(`<b>Possible ignition · ${pct(D.falcon.ignite[object])}</b><br>no report here in 90 days; the network expects 2 or more next`);
+  if (id === 'neural-blind' && object !== undefined) return box(`<b>Blind spot</b><br>${D.falcon.rate[object].toFixed(1)} reports expected, none in 12 weeks`);
   if (id === 'watch') return box(`<b>Following</b><br>${esc(label(object))}`);
   if (id === 'owner-net' && object) return box(`<b>${esc(D.search.owners[object.o - 1].label)}</b><br>report at ${esc(label(object.s))}<br>→ ${esc(label(object.t))}, ${pct(object.r)} risk`);
   if (id === 'pusher-dots' && object) return box(`<b>${esc(label(object.i))}</b><br>pushes on ${object.n} of this portfolio's buildings · +${object.v.toFixed(3)} expected reports`);

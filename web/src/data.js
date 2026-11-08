@@ -48,7 +48,23 @@ export async function load(base = './data', progress = () => {}) {
   const ePos = new Float32Array(m * 2);
   for (let i = 0; i < m; i++) { ePos[2 * i] = e.lon[i]; ePos[2 * i + 1] = e.lat[i]; }
 
-  return { meta, b, e, n, m, bPos, ePos, hotspots, lists, hawkes, alarms, evidence, search };
+  const falcon = await loadFalcon(base);
+  return { meta, b, e, n, m, bPos, ePos, hotspots, lists, hawkes, alarms, evidence, search, falcon };
+}
+
+// FALCON neural field (backend/firebreak/falcon/net.py): a 256 x 256 grid of expected reports, ignition
+// chances and blind-spot flags. Optional: the console runs without it.
+async function loadFalcon(base) {
+  try {
+    const js = await fetch(`${base}/falcon.json`).then(r => (r.ok ? r.json() : null));
+    if (!js) return null;
+    const buf = await fetchBin(`${base}/falcon`);
+    const G = js.grid, col = name => js.layout.find(c => c.name === name);
+    const u16 = (c) => { const a = new Uint16Array(buf, c.offset, G * G); return Float32Array.from(a, v => v * c.scale); };
+    js.rate = u16(col('rate')); js.ignite = u16(col('ignite')); js.blind = new Uint8Array(buf, col('blind').offset, G * G);
+    js.center = k => [js.west + ((k % G) + 0.5) * js.dlon, js.north - (Math.floor(k / G) + 0.5) * js.dlat];
+    return js;
+  } catch { return null; }
 }
 
 export const DAY = 86400000;

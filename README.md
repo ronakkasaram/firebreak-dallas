@@ -95,10 +95,12 @@ The console follows one workflow, keys 1 to 5. The presenter guide, with scripts
 
 1. **Detect.** Every Dallas property report, played back over two years. Emerging clusters from an expectation-based subset scan, the live 311 feed since the snapshot, and the spread rate R by month and council district.
    - **Hidden network** (`N`): arcs from each building with a report this year to the same company's other buildings, the 1.20× same-owner link drawn on the map.
+   - **Resolution playbook** (`R`, or select a cluster): an agent that runs the console's own tools in order. It traces the cluster to its origin, simulates the origin, finds firebreaks, costs the case, routes a crew, and waits for a hold-to-approve. Each step is logged with its result.
    - **Watchlist:** press Follow on any building. Followed buildings are ringed on the map, and the Detect panel flags the ones that new 311 reports touch. It is kept in the browser only.
-2. **Predict.** The 90-day forecast terrain, the backtest replay (model frozen on Jul 1, 2026), the certified list (conformal selection, at most 10% expected wrong) and the calibration chart. Priority interventions open a dossier with a response plan.
+2. **Predict.** The 90-day forecast terrain, the **Neural field** (FALCON's ST-MotionNet predictor retrained on Dallas: a 90-day field for every cell, likely ignitions, blind spots, and crews dispatched on its belief), the backtest replay (model frozen on Jul 1, 2026), the certified list (conformal selection, at most 10% expected wrong) and the calibration chart. Priority interventions open a dossier with a response plan.
 3. **Simulate.** Click any building to open its report:
    - its Distress Factor (1 to 10) and a two-year timeline;
+   - its **root cause**: the chain of earlier reports that most likely set it off (Hawkes branching probabilities);
    - 400 simulated futures for it and every building within 700 m;
    - what drives it, and the neighbours it pushes on;
    - a stress test that injects hypothetical reports;
@@ -107,10 +109,21 @@ The console follows one workflow, keys 1 to 5. The presenter guide, with scripts
    - **Budget plan:** ranked by reports prevented per dollar, with a budget curve, CSV and GeoJSON export, and hold to approve.
    - **District brief:** one page per council office, with tomorrow's crew route (nearest neighbour plus 2-opt).
    - **Portfolio:** how much of an owner's risk comes from buildings it does not control, and which outside buildings to fix or buy first.
-   - **Acquisition leads:** for repair-and-resell buyers, with natural buyers next door and a drive-for-dollars loop.
+   - **Acquisition leads:** for repair-and-resell buyers, with natural buyers next door and a drive-for-dollars loop. Each lead has a **deal desk** that runs the WHOLZR engine's underwriting: an offer waterfall, seller-side odds by discount band, a motivation index, expected fee per contact, and a buyer teaser with no address. Leads can be ranked by expected fee.
 5. **Evidence.** The model card: data joins, held-out results, the Hawkes fit and residuals, fairness by council district, the closure natural experiment with its placebos, and limits.
 
 Press `T` for a guided tour that drives the console by itself. Search and commands (`⌘K` or `/`) find streets, 100-blocks, building names and company portfolios, and jump to any view or action. **Act** also writes a one-page brief for each council district. Every view has a shareable link (`#detect`, `#simulate-b83148`).
+
+## FALCON on Dallas (the neural model)
+
+`backend/firebreak/falcon/` vendors the ST-MotionNet ("Toya") predictor from the founder's FALCON research, unchanged except for one import line. FALCON rebuilds a hidden signal field from sparse, fixed sensors. In Dallas the field is property distress and the sensors are buildings, which report only when someone calls 311. `net.py` turns two years of 311 into 104 weekly frames on a 256 × 256 grid, using FALCON's four input channels: signal, sensor mask, building map and unknown region. It trains both heads, the 90-day field (Poisson loss) and ignition (FALCON's focal loss), using only targets that end before the Jul 1, 2026 cutoff. It then scores the held-out quarter against the boosted model and simple baselines, and backtests crews searching on its belief. Results are in `falcon.json` and on Predict > Neural field. Where it loses, the table says so.
+
+```bash
+cd backend
+~/developer/falcon-stationary-sensors/.venv/bin/python -m firebreak.falcon.net 60   # about 20 min on an M3 CPU
+```
+
+See [docs/RESEARCH.md](docs/RESEARCH.md) for the research behind each feature: past CBRE winners, startup patterns and repos.
 
 ## The numbers behind the dollars
 

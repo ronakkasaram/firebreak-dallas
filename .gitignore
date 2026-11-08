@@ -20,3 +20,4 @@ dist/
 
 # Mac
 .DS_Store
+backend/firebreak/falcon/test_frame.npz

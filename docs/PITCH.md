@@ -91,6 +91,10 @@ Add these between steps 3 and 4:
 | "What's in it for a property owner?" | Act > Portfolio (search a company) | "Share of their risk coming from buildings they don't own, and the outside buildings to fix or buy first." |
 | "And the wholesale angle?" | Act > Acquisition leads, open a lead | "Natural buyers next door: the portfolios that lose most if this house tips. A drive-for-dollars loop plans the route." |
 | "Is it real time?" | The live dot, top bar | "New 311 reports since our snapshot, matched to buildings and re-scored." |
+| "What caused this?" | Click any building: Root cause | "The chain of earlier reports that most likely set this one off, each link with its probability, back to the origin. It's the same idea as an observability tool tracing an outage to the service where it started." |
+| "Okay, so what do you do about it?" | Detect, select a cluster, press `R` | "An agent runs the response with the console's own tools: it traces the cluster to its origin, simulates it, finds firebreaks, costs the work orders and routes a crew. Then it waits for a person to hold Approve. Every step is logged, and nothing is sent." |
+| "Is there real machine learning?" | Predict > Neural field | "That's FALCON, our sparse-sensor neural network: ConvLSTM plus attention, retrained on 104 weeks of Dallas. Buildings are sensors that report only when someone calls. It flags quiet cells likely to ignite and blind spots, and the table shows where it beats the boosted model and where it doesn't." |
+| "How does a wholesaler make money from this?" | Act > Acquisition leads, open a lead | "The deal desk runs our WHOLZR underwriting: offer waterfall, seller odds by discount band, and expected fee per contact. The buyer teaser holds back the address until a non-circumvention is signed." |
 | "Show me the hidden dependency." | Detect, press `N` | "Each arc runs from a building with a report this year to another building with the same owner. That link raises the odds 1.20×. About 5,900 buildings sit on one." |
 | "Can I keep an eye on a building?" | Open a building, press Follow | "It's ringed on the map, and the Detect panel flags it when a new 311 report lands at it or near it." |
 
@@ -159,6 +163,12 @@ All from `web/public/data/` (meta.json, hawkes.json, alarms.json, evidence.json)
 - **"How fast is it?"** The backend build takes about 30 minutes on a laptop. In the browser, a 400-future
   simulation runs in about a second in a Web Worker; the firebreak search scores hundreds of scenarios in a
   few seconds.
+- **"Is the playbook agent an LLM?"** No, on purpose. It's a fixed plan of tool calls, and each step reads the
+  last one's result. Every number it prints comes from the same code a person would click, so nothing is made up,
+  and it stops at a human approval. An LLM could sit on top to write the case summary, but the decisions stay here.
+- **"Your neural network vs the boosted model?"** Read the Neural field table out loud: it shows which one wins at
+  finding where reports pile up and which one wins at calling new ignitions. We use each where it measurably helps,
+  like the Hawkes model.
 - **"Privacy?"** Owner names never reach the browser. Homes are shown at the 100-block level, like police
   crime maps. Owner-occupied homes are never on any lead list. Nothing is sent from the console.
 - **"How is this different from Dallas's camera program?"** City Detect flags what already happened, and
