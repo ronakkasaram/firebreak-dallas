@@ -122,7 +122,7 @@ alarms. The same fit, simulation and firebreak search apply."
 
 ## Numbers cheat sheet
 
-All from `web/public/data/` (meta.json, hawkes.json, alarms.json, evidence.json). Re-check after each build.
+All from `web/public/data/` (meta.json, hawkes.json, alarms.json, evidence.json, falcon.json). Re-check after each build.
 
 | Claim | Number |
 |---|---|
@@ -140,6 +140,10 @@ All from `web/public/data/` (meta.json, hawkes.json, alarms.json, evidence.json)
 | Certified list (promised at most 10% wrong) | realised 7.1% wrong on the held-out quarter; 243 buildings certified today |
 | Fairness | 5 districts under-served (1, 3, 5, 8, 13); none after re-ranking; precision 61.4% to 59.3% |
 | Cluster alarms, backtest | top 3 clusters a week kept reporting at 2.0× baseline for 60 days (busiest cells by count: 1.75×) |
+| FALCON neural field, held-out quarter (154 m cells) | top 1% of cells hold 4.3% of next-quarter reports; boosted model summed per cell 5.6%; last year's counts 7.6% |
+| FALCON ignition calls (quiet cell gets 2+ reports) | top 100: 16% came true vs 14.3% base rate; boosted model 53% |
+| Crew search, 4 crews × 150 cells | aimed at quiet cells: 105 new ignitions found (boosted belief), 91 (FALCON belief); patrolling last year's hotspots: 23; random walk: 17 |
+| Resolution playbook, cluster 1 | 37 houses; 7 of 32 traced reports lead to one origin block; origin + 3 firebreaks spare 1.8 reports; 4 work orders, $60K |
 | Closure study | -8.0% [-14.2, -3.0] after, but -7.3% [-13.0, -1.0] in the 180 days before: the gap predates the closure, so no causal effect |
 
 ## Hard questions, honest answers
@@ -166,9 +170,13 @@ All from `web/public/data/` (meta.json, hawkes.json, alarms.json, evidence.json)
 - **"Is the playbook agent an LLM?"** No, on purpose. It's a fixed plan of tool calls, and each step reads the
   last one's result. Every number it prints comes from the same code a person would click, so nothing is made up,
   and it stops at a human approval. An LLM could sit on top to write the case summary, but the decisions stay here.
-- **"Your neural network vs the boosted model?"** Read the Neural field table out loud: it shows which one wins at
-  finding where reports pile up and which one wins at calling new ignitions. We use each where it measurably helps,
-  like the Hawkes model.
+- **"Your neural network vs the boosted model?"** The boosted model wins, and the console says so. On the held-out
+  quarter FALCON's top 1% of cells hold 4.3% of reports against 5.6% for the boosted model, and its top-100
+  ignition calls are 16% right against 53%. Two years of weekly frames is little data for a ConvLSTM, and the
+  boosted model sees owner and permit features the grid can't. What FALCON gave us is the search idea: send
+  crews to quiet cells, not to last year's hotspots. That finds 4.6× the new ignitions (105 vs 23), and it works
+  with either model's map. We kept the network because it is honest evidence, and because it's the path to a
+  denser sensor feed (inspections, utility shut-offs) where a field model should win.
 - **"Privacy?"** Owner names never reach the browser. Homes are shown at the 100-block level, like police
   crime maps. Owner-occupied homes are never on any lead list. Nothing is sent from the console.
 - **"How is this different from Dallas's camera program?"** City Detect flags what already happened, and

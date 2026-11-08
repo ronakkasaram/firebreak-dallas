@@ -259,12 +259,18 @@ export function renderPredict(D, S, h) {
 }
 
 function crewTable(cs) {
-  const name = { falcon: 'FALCON belief', boosted_sum: 'Boosted model', last_365_days: "Last year's hotspots", random_walk: 'Random walk' };
+  const name = { falcon: 'FALCON belief, quiet cells', boosted_quiet_cells: 'Boosted model, quiet cells', boosted_sum: 'Boosted model, all cells', last_365_days: "Last year's hotspots", random_walk: 'Random walk' };
+  const keys = ['falcon', 'boosted_quiet_cells', 'boosted_sum', 'last_365_days', 'random_walk'].filter(k => cs[k]);
+  const best = keys.slice().sort((x, y) => cs[y].ignitions_found - cs[x].ignitions_found)[0];
+  const quiet = cs.boosted_quiet_cells ? Math.max(cs.falcon.ignitions_found, cs.boosted_quiet_cells.ignitions_found) : cs.falcon.ignitions_found;
+  const patrol = cs.last_365_days?.ignitions_found;
   return `<div class="tw"><table class="t"><thead><tr><th>Crews follow</th><th class="r">Ignitions found</th><th class="r">Reports found</th></tr></thead><tbody>
-    ${['falcon', 'boosted_sum', 'last_365_days', 'random_walk'].filter(k => cs[k]).map(k => `<tr class="${k === 'falcon' ? 'hl' : ''}"><td>${name[k]}</td><td class="r">${cs[k].ignitions_found}</td><td class="r">${num(cs[k].reports_found)}</td></tr>`).join('')}
+    ${keys.map(k => `<tr class="${k === best ? 'hl' : ''}"><td>${name[k]}</td><td class="r">${cs[k].ignitions_found}</td><td class="r">${num(cs[k].reports_found)}</td></tr>`).join('')}
   </tbody></table></div>
   <p class="note">Backtest: ${cs.crews} crews, ${cs.steps_per_crew} cells each, on the day after the cutoff. Found means the
-    inspected cell went on to ignite (or to get reports) in the next 90 days.</p>`;
+    inspected cell went on to ignite (or to get reports) in the next 90 days.${patrol ? ` Aiming the search at quiet cells finds
+    ${(quiet / patrol).toFixed(1)}× the new ignitions of patrolling last year's hotspots, which find more reports because they revisit known trouble.` : ''}
+    Most ignitions found: <b>${name[best]}</b>.</p>`;
 }
 
 function neuralPane(D, S) {
@@ -300,8 +306,8 @@ function neuralPane(D, S) {
       <p class="note">Validation Poisson loss by epoch (8 held-back weeks before the cutoff picked the epoch; the test quarter was never used).</p>
     </div>
     <div class="pane">
-      <div class="sec-h"><h3>Where it expects a new hotspot</h3><small>localization head, today</small></div>
-      <div class="tw"><table class="t"><thead><tr><th>Near</th><th class="r">Chance</th><th class="r">90-day field</th></tr></thead><tbody>
+      <div class="sec-h"><h3>Where it expects a new hotspot</h3><small>localization head, today; scores rank cells, they are not calibrated chances</small></div>
+      <div class="tw"><table class="t"><thead><tr><th>Near</th><th class="r">Score</th><th class="r">90-day field</th></tr></thead><tbody>
         ${F.igniteTop.slice(0, 10).map(k => `<tr class="pick" data-fc="${k}"><td>${esc(F.near[k] || 'unplaced cell')}<small>quiet for 90 days</small></td><td class="r">${pct(F.ignite[k])}</td><td class="r">${F.rate[k].toFixed(1)}</td></tr>`).join('')}
       </tbody></table></div>
       <div class="sec-h" style="margin-top:12px"><h3>Blind spots</h3><small>expected to report, silent for 12 weeks</small></div>
@@ -310,7 +316,7 @@ function neuralPane(D, S) {
       </tbody></table></div>
       <div class="sec-h" style="margin-top:12px"><h3>Send crews to find them</h3><small>FALCON search, greedy policy</small></div>
       <button class="btn ${S.crews ? '' : 'primary'}" id="crews">${S.crews ? 'Clear crew routes' : 'Dispatch 4 crews, 150 cells each'}</button>
-      ${S.crews ? `<div class="kpis">${kpi(num(S.crews.cells), 'cells inspected', `${S.crews.km.toFixed(0)} km walked in total`)}${kpi(S.crews.ign.toFixed(1), 'expected ignitions covered', `and ${S.crews.rate.toFixed(0)} expected reports`)}</div>` : ''}
+      ${S.crews ? `<div class="kpis">${kpi(num(S.crews.cells), 'cells inspected', `${S.crews.km.toFixed(0)} km walked in total`)}${kpi(S.crews.ign.toFixed(0), 'ignition score covered', `uncalibrated focal-loss score · ${S.crews.rate.toFixed(0)} expected reports`)}</div>` : ''}
       ${F.backtest.crew_search ? crewTable(F.backtest.crew_search) : ''}
       <p class="note">FALCON's agents hunt for a source with the predictor's belief; here the hunters are inspection crews. Each
         crew steps to the neighbouring cell with the most unvisited belief nearby, and visited cells drop to zero so crews fan
@@ -729,6 +735,11 @@ export function renderEvidence(D) {
         <li><span>Route time (placeholders)</span><b>${D.ROUTE.kmh} km/h · ×${D.ROUTE.detour} roads · ${D.ROUTE.minPerStop} min a stop</b></li>
         <li><span>Defensive moves, natural buyers</span><b>Hawkes neighbour kernel, ${D.hawkes?.params.sigma_m} m scale</b></li>
         <li><span>Stress test</span><b>shock reports enter the same cascade</b></li>
+        <li><span>Root cause</span><b>Hawkes branching posterior, most likely parent, hop by hop (links under 15% stop the chain)</b></li>
+        <li><span>Resolution playbook</span><b>fixed plan of the console's own tools, human approval at the end</b></li>
+        <li><span>Deal desk (WHOLZR)</span><b>discount bands and accept formula from the WHOLZR engine; motivation weights and reply rate are placeholders</b></li>
+        ${D.falcon ? `<li><span>Neural field (FALCON)</span><b>ST-MotionNet: CNN encoder, ${D.falcon.model.layers}-layer ConvLSTM with self-attention, Poisson + focal heads; ${D.falcon.model.train_frames} training weeks, best epoch by ${D.falcon.model.val_frames} validation weeks</b></li>
+        <li><span>Crew search</span><b>greedy team search on the belief map (FALCON's agents not retrained)</b></li>` : ''}
       </ul>
     </div>
     <div class="pane">

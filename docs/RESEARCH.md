@@ -118,7 +118,7 @@ Dallas 311 has the same shape:
 | Localization head | Where a new hotspot ignites (no report in 90 days, then 2 or more) |
 | Agents searching for the source | Inspection crews dispatched toward likely ignitions |
 
-The predictor is the real Toya code, vendored unchanged in `backend/firebreak/falcon/`, and retrained on 104 weekly Dallas frames. Its training targets all end before the same Jul 1, 2026 cutoff the boosted model was frozen on. The backtest is in `falcon.json` and on the Evidence tab, including where it loses.
+The predictor is the real Toya code, vendored unchanged in `backend/firebreak/falcon/`, and retrained on 104 weekly Dallas frames. Its training targets all end before the same Jul 1, 2026 cutoff the boosted model was frozen on. The backtest is in `falcon.json` and on Predict > Neural field, including where it loses. It does lose: top-1% capture 4.3% against the boosted model's 5.6%, and top-100 ignition precision 16% against 53%. The crew search is what carries over: aimed at quiet cells it finds 91 to 105 new ignitions, against 23 for patrolling last year's hotspots.
 
 Not done: the RL agents are not retrained on Dallas. The crew search in the console uses a greedy policy on the predictor's belief map, and it is labelled that way.
 

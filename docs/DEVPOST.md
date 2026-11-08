@@ -33,6 +33,10 @@ Built for the people who act on it:
 - **A stress test** injects hypothetical reports at any building and shows the cascade they set off.
 - **Each council district gets a one-page brief** and tomorrow's crew route, planned with nearest-neighbour and 2-opt and handed off to Google Maps.
 - **Property owners see the share of their risk that comes from buildings they don't own**, and which outside buildings to fix or buy first.
+- **Root cause:** click a building and Firebreak traces the chain of earlier reports that most likely set it off, each link with its probability, back to the origin (Hawkes branching posterior).
+- **A resolution playbook (press R on a cluster):** an agent runs the console's own tools one visible step at a time. It traces the cluster to its origin, simulates it, picks firebreaks, costs the work orders, routes a crew, then stops for a person to hold Approve. It is a fixed plan of tool calls, not an LLM, so every number in its log is computed.
+- **A neural field (FALCON):** our sparse-sensor ConvLSTM research model, retrained on 104 weeks of Dallas. Buildings are sensors that only report when someone calls. It maps likely new hotspots and blind spots, and dispatches search crews on its belief.
+- **A deal desk** for acquisition leads: offer waterfall, seller odds by discount band and expected fee per contact, from our WHOLZR underwriting engine.
 - **For buyers who repair and resell**, each lead shows its natural buyers: the company portfolios next door that lose the most if it tips. A drive-for-dollars loop plans the route.
 
 Two of CBRE's three "hidden dependencies" turned out to be real and measurable, even on buildings that had
@@ -51,6 +55,7 @@ never had a report:
 - **Alarms:** an expectation-based Poisson scan with the fast subset scan (Neill 2012), with significance judged against a year of weekly maxima.
 - **Calibration:** Venn-Abers intervals, plus conformal selection with Benjamini-Hochberg for the certified list.
 - **Fairness and causality:** a council-district fairness audit (four-fifths rule) with district-fair re-ranking. A ring difference-in-differences natural experiment on case-closure speed, with placebo tests.
+- **Neural field:** the ST-MotionNet predictor from our FALCON research (CNN encoder, ConvLSTM with self-attention, Poisson and focal-loss heads) in JAX, trained on 256 × 256 weekly frames with the same Jul 1 cutoff.
 - **Front end:** deck.gl and MapLibre, with binary columnar data so 241,588 buildings render in the browser.
 
 ## Challenges we ran into
@@ -58,6 +63,7 @@ never had a report:
 - **No shared IDs.** No source shares an ID with any other, so every join is fuzzy.
 - **Our most sophisticated model ranks worse than the simpler one.** The Hawkes model hits 54% on the top 2,000, against the boosted model's 61%. So the boosted model ranks, and the Hawkes model runs the what-ifs.
 - **Calibration broke at looser settings.** The certified list held at 10%, but at 20% it ran to 26% wrong because summer was quieter than spring. We only certify at 10%.
+- **Our neural network lost.** FALCON's top 1% of cells caught 4.3% of next-quarter reports, the boosted model 5.6%. Its ignition calls were 16% right, the boosted model's 53%. What survived is its search idea: crews sent to quiet cells find 4.6× the new hotspots that crews patrolling last year's hotspots do.
 - **The closure study came back negative.** Closing a code case fast looks protective (−8%), but the same gap existed before the case was even opened, so it isn't causal. We show that instead of hiding it.
 
 ## Accomplishments that we're proud of

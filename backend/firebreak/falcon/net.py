@@ -304,11 +304,13 @@ def evaluate(lr, lc, heat, ignite, info):
     for kk in (100, 500):
         out["ignition"][f"precision_top_{kk}"] = {n: round(precision_at(v, ign, cand, kk)[0], 4) for n, v in ign_rank.items()}
     out["ignition"]["base_rate"] = round(precision_at(lc[k], ign, cand, 1)[1], 4)
-    # Crews hunting for new ignitions: FALCON's belief (ignition chance x expected reports) against
-    # patrolling last year's busiest cells and the boosted model.
+    # Crews hunting for new ignitions: FALCON's belief (ignition chance on quiet cells, then expected
+    # reports) against patrolling last year's busiest cells, the boosted model, and the boosted model
+    # restricted to the same quiet cells (the fair comparison: same search target, different scorer).
     p_ign = 1 / (1 + np.exp(-lc[k]))
     out["crew_search"] = search_eval({"falcon": p_ign * cand + 1e-3 * np.exp(np.clip(lr[k], -12, 6)),
-                                      "boosted_sum": gbm, "last_365_days": w(cutoff - 365, cutoff)},
+                                      "boosted_sum": gbm, "boosted_quiet_cells": gbm * cand + 1e-3 * gbm,
+                                      "last_365_days": w(cutoff - 365, cutoff)},
                                      truth, ign * cand, s)
     np.savez_compressed(Path(__file__).with_name("test_frame.npz"), lograte=lr[k], ignite_logit=lc[k], truth=truth, ignite=ign)
     return out
@@ -353,7 +355,7 @@ def rescore_search():
     cand = s * (w(cutoff - 90, cutoff) == 0)
     p_ign = 1 / (1 + np.exp(-t["ignite_logit"]))
     res = search_eval({"falcon": p_ign * cand + 1e-3 * np.exp(np.clip(t["lograte"], -12, 6)), "boosted_sum": gbm,
-                       "last_365_days": w(cutoff - 365, cutoff)}, t["truth"], t["ignite"] * cand, s)
+                       "boosted_quiet_cells": gbm * cand + 1e-3 * gbm, "last_365_days": w(cutoff - 365, cutoff)}, t["truth"], t["ignite"] * cand, s)
     js = json.loads((DATA / "falcon.json").read_text())
     js["backtest"]["crew_search"] = res
     (DATA / "falcon.json").write_text(json.dumps(js, indent=1))

@@ -118,9 +118,12 @@ Press `T` for a guided tour that drives the console by itself. Search and comman
 
 `backend/firebreak/falcon/` vendors the ST-MotionNet ("Toya") predictor from the founder's FALCON research, unchanged except for one import line. FALCON rebuilds a hidden signal field from sparse, fixed sensors. In Dallas the field is property distress and the sensors are buildings, which report only when someone calls 311. `net.py` turns two years of 311 into 104 weekly frames on a 256 × 256 grid, using FALCON's four input channels: signal, sensor mask, building map and unknown region. It trains both heads, the 90-day field (Poisson loss) and ignition (FALCON's focal loss), using only targets that end before the Jul 1, 2026 cutoff. It then scores the held-out quarter against the boosted model and simple baselines, and backtests crews searching on its belief. Results are in `falcon.json` and on Predict > Neural field. Where it loses, the table says so.
 
+Result on the held-out quarter: the boosted model wins. FALCON's top 1% of cells hold 4.3% of next-quarter reports (boosted 5.6%, last year's counts 7.6%), and its top-100 ignition calls are 16% right (boosted 53%, base rate 14.3%). The crew backtest is the useful part: four crews searching quiet cells find 91 (FALCON belief) or 105 (boosted belief) new ignitions, against 23 when they patrol last year's hotspots.
+
 ```bash
 cd backend
-~/developer/falcon-stationary-sensors/.venv/bin/python -m firebreak.falcon.net 60   # about 20 min on an M3 CPU
+~/developer/falcon-stationary-sensors/.venv/bin/python -m firebreak.falcon.net 60   # about 35 min on an M3 CPU
+~/developer/falcon-stationary-sensors/.venv/bin/python -m firebreak.falcon.net rescore   # re-run only the crew backtest
 ```
 
 See [docs/RESEARCH.md](docs/RESEARCH.md) for the research behind each feature: past CBRE winners, startup patterns and repos.
