@@ -45,7 +45,8 @@ function timeline(D, i) {
     <div class="tl-ax"><span>${meta.events_start.slice(0, 7)}</span><span>${n} report${n === 1 ? '' : 's'}, by week</span><span>${meta.as_of.slice(0, 7)}</span></div>`;
 }
 
-export function veilAddr(a) { return String(a).replace(/^\d+/, m => (Math.floor(+m / 100) * 100) + ' block of'); }
+// Idempotent: the public build ships home addresses already veiled (tools/deploy-site).
+export function veilAddr(a) { a = String(a); return /\bblock of\b/.test(a) ? a : a.replace(/^\d+/, m => (Math.floor(+m / 100) * 100) + ' block of'); }
 function shownAddr(h) { return h.asset_class === 'home' ? veilAddr(h.address) : h.address; }
 
 export function store(key, val) {

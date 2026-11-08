@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Build the product site and console, scrub the public copy of the data, and publish it to GitHub Pages.
+#
+#   tools/deploy-site                 # build and publish to ronakkasaram/firebreak-site
+#   SITE_REPO=org/name tools/deploy-site
+#   CUSTOM_DOMAIN=firebreak.example.com tools/deploy-site   # also writes a CNAME
+#   DRY_RUN=1 tools/deploy-site       # build and scrub only; publish nothing
+#
+# The team repo stays private. Only web/dist goes to the site repo, which holds nothing but the build.
+#
+# Public scrub: the console already shows homes at the 100-block level. The public files go one step further:
+# for homes, the exact house number and DCAD parcel id are removed from lists.json and hotspots.json before
+# upload. Commercial and multifamily buildings keep their street addresses, as on any commercial map.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SITE_REPO="${SITE_REPO:-ronakkasaram/firebreak-site}"
+OUT="$ROOT/web/dist"
+
+echo "build"
+(cd "$ROOT/web" && npx vite build >/dev/null)
+
+echo "scrub home addresses"
+python3 - "$OUT/data" <<'PY'
+import hashlib, json, re, sys
+from pathlib import Path
+d = Path(sys.argv[1])
+def veil(a):
+    return a if " block of " in a else re.sub(r"^(\d+)", lambda m: f"{int(m.group(1)) // 100 * 100} block of", a)
+def scrub(x):
+    if x.get("asset_class") == "home":
+        if x.get("address"): x["address"] = veil(x["address"])
+        if x.get("parcel_id"): x["parcel_id"] = "h" + hashlib.sha1(x["parcel_id"].encode()).hexdigest()[:12]
+    return x
+n = 0
+lists = json.loads((d / "lists.json").read_text())
+for L in lists["lists"]:
+    for x in L["leads"]: scrub(x); n += 1
+top = lists.get("top")
+if isinstance(top, list):
+    for x in top:
+        if isinstance(x, dict): scrub(x)
+(d / "lists.json").write_text(json.dumps(lists, separators=(",", ":")))
+hot = json.loads((d / "hotspots.json").read_text())
+for x in hot: scrub(x)
+(d / "hotspots.json").write_text(json.dumps(hot, separators=(",", ":")))
+left = [x["address"] for L in lists["lists"] for x in L["leads"] if x.get("asset_class") == "home" and re.match(r"^\d+ (?!block)", x["address"])]
+assert not left, f"unveiled home addresses: {left[:3]}"
+print(f"  {n} leads and {len(hot)} hotspots scrubbed")
+PY
+
+touch "$OUT/.nojekyll"
+if [ -n "${CUSTOM_DOMAIN:-}" ]; then echo "$CUSTOM_DOMAIN" > "$OUT/CNAME"; fi
+if [ -n "${DRY_RUN:-}" ]; then echo "dry run: built and scrubbed $OUT, nothing published"; exit 0; fi
+
+if ! gh repo view "$SITE_REPO" >/dev/null 2>&1; then
+  echo "create $SITE_REPO"
+  gh repo create "$SITE_REPO" --public --description "Firebreak: predict where property distress spreads next, trace it, and stop it. Live build of the HackUTD 2026 CBRE project." >/dev/null
+fi
+
+echo "publish"
+TMP="$(mktemp -d)"
+cp -R "$OUT"/. "$TMP"/
+cd "$TMP"
+git init -q -b main
+git add -A
+git -c user.name="$(git -C "$ROOT" config user.name)" -c user.email="$(git -C "$ROOT" config user.email)" \
+  commit -q -m "Deploy $(git -C "$ROOT" rev-parse --short HEAD) from firebreak-hackutd"
+# The site repo holds only build output, so each deploy replaces it outright.
+git push -q --force "https://github.com/$SITE_REPO.git" main
+
+if ! gh api "repos/$SITE_REPO/pages" >/dev/null 2>&1; then
+  gh api -X POST "repos/$SITE_REPO/pages" -f "source[branch]=main" -f "source[path]=/" >/dev/null
+fi
+OWNER="${SITE_REPO%%/*}"; NAME="${SITE_REPO##*/}"
+echo "live at ${CUSTOM_DOMAIN:+https://$CUSTOM_DOMAIN/ or }https://${OWNER}.github.io/${NAME}/ (first build takes about a minute)"

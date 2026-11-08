@@ -124,6 +124,19 @@ The console opens on **Home** (key `0`), then follows one workflow, keys 1 to 5.
 
 Press `T` for a guided tour that drives the console by itself, or `F` for **film mode**: the same tour full screen between a title card and an end card, for recording a promo. Search and commands (`⌘K` or `/`) find streets, 100-blocks, building names and company portfolios, and jump to any view or action. **Act** also writes a one-page brief for each council district. Every view has a shareable link (`app.html#detect`, `app.html#simulate-b83148`, `app.html#film`).
 
+## Deploying the site
+
+```bash
+DRY_RUN=1 tools/deploy-site   # build web/dist and scrub it, publish nothing
+tools/deploy-site             # publish to GitHub Pages: https://ronakkasaram.github.io/firebreak-site/
+CUSTOM_DOMAIN=firebreak.example.com tools/deploy-site
+```
+
+This team repo stays private. The script pushes only the built `web/dist` to a separate public repo,
+`ronakkasaram/firebreak-site`, and turns on GitHub Pages. Before upload it scrubs the public copy: for homes it
+replaces the house number with the 100-block and hashes the DCAD parcel id in `lists.json` and `hotspots.json`.
+`web/dist` is plain static files, so it also deploys unchanged to Netlify, Vercel or Cloudflare Pages.
+
 ## FALCON on Dallas (the neural model)
 
 `backend/firebreak/falcon/` vendors the ST-MotionNet ("Toya") predictor from the founder's FALCON research, unchanged except for one import line. FALCON rebuilds a hidden signal field from sparse, fixed sensors. In Dallas the field is property distress and the sensors are buildings, which report only when someone calls 311. `net.py` turns two years of 311 into 104 weekly frames on a 256 × 256 grid, using FALCON's four input channels: signal, sensor mask, building map and unknown region. It trains both heads, the 90-day field (Poisson loss) and ignition (FALCON's focal loss), using only targets that end before the Jul 1, 2026 cutoff. It then scores the held-out quarter against the boosted model and simple baselines, and backtests crews searching on its belief. Results are in `falcon.json` and on Predict > Neural field. Where it loses, the table says so.
