@@ -1,6 +1,6 @@
 # The contract
 
-The pipeline writes 4 files to `web/public/data/`. The console reads only these files. If you change a field, change this file in the same commit and post on the board.
+The pipeline writes 6 files to `web/public/data/`. The console reads only these files. If you change a field, change this file in the same commit and post on the board.
 
 ## meta.json
 
@@ -18,6 +18,7 @@ The pipeline writes 4 files to `web/public/data/`. The console reads only these 
 | `kinds` | Index to name for `events.bin` `kind`: `code`, `rental`, `tenant`, `construction` (unused), `vacancy`, `nuisance`, `infra`. |
 | `buildings_layout`, `events_layout` | Where each column sits in the `.bin` files: `name`, `dtype`, `offset` (bytes), `length`. |
 | `buyers` | Top 25 repeat company buyers: `name`, `buys_2y`, `classes`. |
+| `audit` | Held-out checks at `cutoff`. `lead_time`: `capacity_per_day`, `visits`, `cases`, and per ranking (`network`, `base`, `district_fair`, `last_year_count`) `cases_reached_early`, `share_of_cases`, `median_days_ahead`, `mean_days_ahead`. `fairness` and `fairness_after_rerank`: `watch_list`, `city_recall`, `city_precision`, and `districts` (one row per council district: `district`, `buildings`, `cases`, `flagged`, `case_share`, `flag_share`, `precision`, `recall`, `recall_ratio`, `fdr_ratio`, `under_served`, `over_flagged`). |
 
 ## buildings.bin
 
@@ -33,6 +34,8 @@ One record per building, column after column, little-endian. Read it with `meta.
 | `hit_backtest` | uint8 | 1 if the building really got a report in the 90 days after `backtest_cutoff` |
 | `class` | uint8 | Index into `meta.classes` |
 | `reports_365` | uint8 | Property reports at this building in the last year (capped at 255) |
+| `mu` | float32 | Hawkes background rate today: expected reports per day with no recent reports nearby |
+| `district` | uint8 | Dallas city council district (1 to 14, 0 if unknown), from the nearest 311 record |
 
 ## events.bin
 
@@ -43,6 +46,21 @@ Every 311 report in the last 730 days, sorted by time.
 | `lon`, `lat` | float32 | Position |
 | `day` | uint16 | Days since `events_start` |
 | `kind` | uint8 | Index into `meta.kinds`. `infra` (6) is a pipe, street or signal failure. Everything else is a property report |
+| `b` | int32 | Index of the building the report is at in `buildings.bin`, or -1 |
+| `new_case` | uint8 | 1 unless it repeats the same kind at the same address within 2 days (the Hawkes model counts only new cases) |
+
+## hawkes.json
+
+The house-by-house spread model (`backend/firebreak/hawkes.py`).
+
+| Field | Meaning |
+|---|---|
+| `params` | `sigma_m` (distance scale), `beta_fast`, `beta_slow` (fade per day), `fast_share`, `fast_delay_hours`, `slow_delay_days`, `radius_m`, `window_days`, `a_self` and `a_nb` by kind, `theta` (background coefficients by covariate, including `chronic`), `kind_share`, `covariates` (means and SDs used for standardising). |
+| `fit` | `train`, `test`, `sigmas_tried`, report and pair counts, `em_loglik`, `test_loglik_hawkes`, `test_loglik_poisson`, `test_gain_nats_per_report`, `triggered_share`, `spread_share`, `triggered_share_recent`, `mean_neighbor_exposure`. |
+| `branching` | By kind: `same_house` and `neighbours`, new reports each report sets off on the slow scale. |
+| `arcs` | Rows of `arcs_columns`: `src_lon`, `src_lat`, `dst_lon`, `dst_lat`, `p` (probability the source set off the destination), `day_since_window_start`, `src_kind` (index into `KINDS`: code, rental, tenant, vacancy, nuisance). |
+| `arcs_window_start` | Day 0 for `arcs`. |
+| `as_ranker` | Top-2,000 precision of the Hawkes forecast on `cutoff` next to the boosted model's. |
 
 ## hotspots.json
 

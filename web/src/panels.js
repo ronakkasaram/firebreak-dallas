@@ -75,6 +75,7 @@ export function renderLegend(mode) {
     backtest: [['#ff6a2b', 'flagged on cutoff day'], ['#8fbf7a', 'report landed: called it']],
     forecast: [['#ff6a2b', 'expected new reports'], ['#c9a25a', 'firebreak: homes'], ['#ff6a2b', 'firebreak: commercial']],
     wholesale: [['#ff6a2b', 'first spark'], ['#eb4646', 'code stack'], ['#c9a25a', 'tired landlord'], ['#be5aa0', 'block on fire']],
+    house: [['#ff6a2b', 'trigger arc: report to the report it set off'], ['#ffb26e', 'chance of a report, 90 days'], ['#8fbf7a', 'stabilized']],
   }[mode];
   $('legend').innerHTML = items.map(([c, t]) => `<span><i style="background:${c}"></i>${t}</span>`).join('');
 }
@@ -283,4 +284,121 @@ export function renderDossier(h, D, state, onClose) {
     });
   }
   el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ---------- house by house ----------
+
+const HK_KINDS = ['code', 'rental', 'tenant', 'vacancy', 'nuisance'];
+const EV_KIND = ['code violation', 'unregistered rental', 'tenant complaint', 'construction', 'vacancy', 'nuisance', 'pipes, streets'];
+const CLASS_NAME = ['home', 'multifamily', 'commercial', 'industrial'];
+
+function sparkline(base, withS) {
+  const W = 300, H = 64, n = base.length - 1;
+  const max = Math.max(base[n], 1e-9);
+  const path = a => Array.from(a, (v, t) => `${t ? 'L' : 'M'}${(t / n * W).toFixed(1)},${(H - v / max * (H - 6)).toFixed(1)}`).join('');
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Expected reports over 90 days">
+    <path d="${path(base)}" class="sp-base"/>${withS ? `<path d="${path(withS)}" class="sp-with"/>` : ''}</svg>`;
+}
+
+export function renderHouseIdle(D) {
+  const h = D.hawkes, a = D.meta.audit;
+  if (!h) { $('house').innerHTML = '<p class="muted">Run the backend build to make hawkes.json.</p>'; return; }
+  const f = h.fit, p = h.params;
+  const maxB = Math.max(...HK_KINDS.map(k => h.branching[k].same_house + h.branching[k].neighbours));
+  const lt = a?.lead_time?.rankings, before = a?.fairness, after = a?.fairness_after_rerank;
+  const under = r => r.districts.filter(d => d.under_served).length;
+  $('house').innerHTML = `
+    <div class="kicker">House by house</div>
+    <h2 class="hh">A report on one house raises the odds on the next one. We measured by how much.</h2>
+    <p class="lede">A self-exciting point process (Hawkes) fitted to every Dallas property report, house by house:
+      each report adds to the rate of its own house and of houses within ${p.radius_m} m, fading with distance
+      (${p.sigma_m} m scale) and time (${p.slow_delay_days} days on average).</p>
+    <div class="proof">
+      <div><b>${pct(f.spread_share)}</b><span>of 2025 reports were set off by an earlier report nearby, on the weeks-long
+        scale. Another ${pct(f.triggered_share - f.spread_share)} were same-hour echoes of one problem.</span></div>
+      <div><b>+${f.test_gain_nats_per_report.toFixed(2)}</b><span>nats per report on held-out ${f.test.replace(' to ', '–')}
+        against the same model with no spread. The spread is real, not a fitting artefact.</span></div>
+    </div>
+    <div class="kicker sub">New reports each report sets off, by kind</div>
+    <ul class="branch">${HK_KINDS.map(k => {
+      const b = h.branching[k];
+      return `<li><span>${k}</span><span class="bar"><i class="own" style="width:${b.same_house / maxB * 100}%"></i><i class="nb"
+        style="width:${b.neighbours / maxB * 100}%"></i></span><b>${(b.same_house + b.neighbours).toFixed(2)}</b></li>`;
+    }).join('')}</ul>
+    <p class="note"><i class="sw own"></i>same house <i class="sw nb"></i>neighbours. As a ranker this model hits
+      ${pct(h.as_ranker.watch_precision)} on the top 2,000 against ${pct(h.as_ranker.gbm_watch_precision)} for the boosted
+      model, so the list stays boosted. Hawkes runs the what-if.</p>
+    ${lt ? `<div class="kicker sub">Days of warning (held-out ${a.cutoff})</div>
+    <p class="lede">A crew that visits ${a.lead_time.capacity_per_day} buildings a day in our order reaches
+      <b>${lt.network.cases_reached_early.toLocaleString()}</b> cases before the first 311 call, a median
+      <b>${lt.network.median_days_ahead} days early</b>. Working from last year's complaint counts reaches
+      ${lt.last_year_count.cases_reached_early.toLocaleString()}. Waiting for calls reaches none.</p>` : ''}
+    ${before ? `<div class="kicker sub">Fair across the 14 council districts</div>
+    <ul class="fair">${before.districts.map((d, k) => {
+      const d2 = after.districts[k];
+      const x = v => Math.min(100, (v ?? 0) / 2 * 100);
+      return `<li><span>D${d.district}</span><span class="track"><em></em><i class="${d.under_served ? 'bad' : ''}"
+        style="left:${x(d.recall_ratio)}%"></i><i class="fix" style="left:${x(d2.recall_ratio)}%"></i></span></li>`;
+    }).join('')}</ul>
+    <p class="note">Dot: each district's share of its real cases on the list, against the city (line at 1.0).
+      Ember: ${under(before)} districts under 0.8, the four-fifths rule. Lichen: after giving each district slots in proportion to
+      the cases the model expects there. ${under(after)} under 0.8; precision ${pct(before.city_precision)} to ${pct(after.city_precision)}.</p>` : ''}
+    <p class="cta">Click any building on the map.</p>`;
+}
+
+export function renderHouse(D, H, actions) {
+  const { b } = D, r = H.res, i = H.i;
+  const N = r?.N, f = r?.focus, end = 90;
+  const pBase = r ? r.base.pBy[end * N + f] : null;
+  const pWith = r?.withS ? r.withS.pBy[end * N + f] : null;
+  const stabilized = H.stab.includes(i);
+  const dr = r?.drivers;
+  const drTot = dr ? dr.background + dr.self + dr.neighbours : 1;
+  const area = r ? r.base.cumDaily[end] : 0;
+  const areaWith = r?.withS ? r.withS.cumDaily[end] : null;
+  const hot = D.hotspots.find(h => h.i === i);
+  $('house').innerHTML = `
+    <button class="close" id="house-close" aria-label="Back">×</button>
+    <div class="kicker">House by house · ${CLASS_NAME[b.class[i]]} · council district ${b.district?.[i] || '?'}</div>
+    <h2 class="hh">${hot ? esc(hot.name || (hot.asset_class === 'home' ? veilAddr(hot.address) : hot.address)) : `Building ${i.toLocaleString()}`}</h2>
+    <p class="muted small">DCAD value ${kusd(b.value[i])} · boosted-model 90-day risk ${pct(b.risk[i] / 255)} · ${b.reports_365[i]} reports in the last year</p>
+    ${!r ? `<p class="muted">${esc(H.status || 'simulating …')}</p>` : `
+    <div class="proof">
+      <div><b>${stabilized ? '0%' : pct(pWith ?? pBase)}</b><span>chance of a new report here within 90 days, across
+        ${r.runs} simulated futures${pWith !== null && !stabilized ? ` (${pct(pBase)} with no firebreaks)` : ''}.
+        ${r.base.medianDay && !stabilized ? `If one comes, median day ${r.base.medianDay}.` : ''}</span></div>
+      <div><b>${(areaWith ?? area).toFixed(1)}</b><span>reports expected within 700 m${areaWith !== null ? `, down from ${area.toFixed(1)}` : ''}.
+        80% of futures: ${(r.withS || r.base).p10}–${(r.withS || r.base).p90}.</span></div>
+    </div>
+    ${sparkline(r.base.cumDaily, r.withS?.cumDaily)}
+    <div class="kicker sub">Why this house</div>
+    <div class="drivers"><i class="bg" style="width:${dr.background / drTot * 100}%"></i><i class="own"
+      style="width:${dr.self / drTot * 100}%"></i><i class="nb" style="width:${dr.neighbours / drTot * 100}%"></i></div>
+    <p class="note"><i class="sw bg"></i>its own record ${dr.background.toFixed(2)} <i class="sw own"></i>its past reports
+      ${dr.self.toFixed(2)} <i class="sw nb"></i>neighbours' reports ${dr.neighbours.toFixed(2)} (expected reports, 90 days)</p>
+    <ol class="why">${dr.top.slice(0, 5).map(t => `<li><span>${EV_KIND[t.kind]}</span><span>${t.self ? 'this house' : t.d + ' m away'},
+      ${t.age} days ago</span><b>+${t.v.toFixed(3)}</b></li>`).join('') || '<li class="muted">No reports within 250 m in 180 days.</li>'}</ol>
+    <div class="acts">
+      <button id="stab" class="${stabilized ? 'on' : ''}">${stabilized ? 'stabilized · undo' : 'stabilize this house'}</button>
+      <button id="fb" ${H.busy ? 'disabled' : ''}>find 3 firebreaks</button>
+      ${H.stab.length ? '<button id="clear">clear</button>' : ''}
+    </div>
+    ${H.status ? `<p class="muted small">${esc(H.status)}</p>` : ''}
+    ${H.fb ? `<div class="kicker sub">Firebreaks: where fixing one house spares the most others</div>
+    <ol class="picks">${H.fb.picks.map(p => `<li data-g="${p.g}"><span>${CLASS_NAME[b.class[p.g]]} ${p.g.toLocaleString()}</span>
+      <span>${p.own.toFixed(2)} own</span><b>${p.spread.toFixed(2)} spared</b></li>`).join('')}</ol>
+    <p class="note">${H.fb.evals} scenarios scored with exact expected counts (lazy greedy over the ${H.fb.candidates} most active
+      houses). "Spared": reports prevented at <em>other</em> houses.</p>` : ''}
+    ${r.withS ? `<div class="proof one"><div><b>${kusd(r.protectedUsd)}</b><span>neighbour value protected:
+      ${r.prevented.toFixed(1)} fewer reports in simulation, each distressed house costing 0.9% of residential value within 200 m
+      (Immergluck &amp; Smith 2006).</span></div></div>` : ''}
+    <p class="note">Stabilize means the house stops producing reports and its past reports stop pushing on neighbours:
+      repairs, a code fix, or a WHOLZR buy-and-rehab (homesteads get help first). Same random seeds for every scenario,
+      so the difference is the intervention, not luck.</p>`}`;
+  $('house-close').onclick = actions.close;
+  if (!r) return;
+  $('stab').onclick = actions.toggle;
+  $('fb').onclick = actions.firebreaks;
+  if ($('clear')) $('clear').onclick = actions.clear;
+  document.querySelectorAll('.picks li').forEach(li => { li.onclick = () => actions.fly(+li.dataset.g); });
 }

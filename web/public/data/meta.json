@@ -238,6 +238,446 @@
    "source": "Placeholder building inspection."
   }
  },
+ "audit": {
+  "cutoff": "2026-07-01",
+  "lead_time": {
+   "capacity_per_day": 50,
+   "visits": 4500,
+   "cases": 15451,
+   "rankings": {
+    "network": {
+     "cases_reached_early": 1018,
+     "share_of_cases": 0.0659,
+     "median_days_ahead": 18.5,
+     "mean_days_ahead": 23.5
+    },
+    "base": {
+     "cases_reached_early": 1022,
+     "share_of_cases": 0.0661,
+     "median_days_ahead": 19.4,
+     "mean_days_ahead": 23.7
+    },
+    "district_fair": {
+     "cases_reached_early": 1004,
+     "share_of_cases": 0.065,
+     "median_days_ahead": 18.7,
+     "mean_days_ahead": 23.7
+    },
+    "last_year_count": {
+     "cases_reached_early": 938,
+     "share_of_cases": 0.0607,
+     "median_days_ahead": 19.3,
+     "mean_days_ahead": 24.3
+    }
+   }
+  },
+  "fairness": {
+   "watch_list": 2000,
+   "city_recall": 0.0795,
+   "city_precision": 0.614,
+   "districts": [
+    {
+     "district": 1,
+     "buildings": 19622,
+     "cases": 1525,
+     "flagged": 120,
+     "case_share": 0.0987,
+     "flag_share": 0.06,
+     "precision": 0.6083,
+     "recall": 0.0479,
+     "recall_ratio": 0.6,
+     "fdr_ratio": 1.01,
+     "under_served": true,
+     "over_flagged": false
+    },
+    {
+     "district": 2,
+     "buildings": 15373,
+     "cases": 1467,
+     "flagged": 267,
+     "case_share": 0.0949,
+     "flag_share": 0.1335,
+     "precision": 0.6404,
+     "recall": 0.1166,
+     "recall_ratio": 1.47,
+     "fdr_ratio": 0.93,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 3,
+     "buildings": 19380,
+     "cases": 1102,
+     "flagged": 91,
+     "case_share": 0.0713,
+     "flag_share": 0.0455,
+     "precision": 0.6703,
+     "recall": 0.0554,
+     "recall_ratio": 0.7,
+     "fdr_ratio": 0.85,
+     "under_served": true,
+     "over_flagged": false
+    },
+    {
+     "district": 4,
+     "buildings": 23366,
+     "cases": 1737,
+     "flagged": 195,
+     "case_share": 0.1124,
+     "flag_share": 0.0975,
+     "precision": 0.6205,
+     "recall": 0.0697,
+     "recall_ratio": 0.88,
+     "fdr_ratio": 0.98,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 5,
+     "buildings": 20829,
+     "cases": 808,
+     "flagged": 67,
+     "case_share": 0.0523,
+     "flag_share": 0.0335,
+     "precision": 0.597,
+     "recall": 0.0495,
+     "recall_ratio": 0.62,
+     "fdr_ratio": 1.04,
+     "under_served": true,
+     "over_flagged": false
+    },
+    {
+     "district": 6,
+     "buildings": 16961,
+     "cases": 1181,
+     "flagged": 145,
+     "case_share": 0.0764,
+     "flag_share": 0.0725,
+     "precision": 0.669,
+     "recall": 0.0821,
+     "recall_ratio": 1.03,
+     "fdr_ratio": 0.86,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 7,
+     "buildings": 19745,
+     "cases": 1274,
+     "flagged": 170,
+     "case_share": 0.0825,
+     "flag_share": 0.085,
+     "precision": 0.5529,
+     "recall": 0.0738,
+     "recall_ratio": 0.93,
+     "fdr_ratio": 1.16,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 8,
+     "buildings": 18449,
+     "cases": 1259,
+     "flagged": 83,
+     "case_share": 0.0815,
+     "flag_share": 0.0415,
+     "precision": 0.6867,
+     "recall": 0.0453,
+     "recall_ratio": 0.57,
+     "fdr_ratio": 0.81,
+     "under_served": true,
+     "over_flagged": false
+    },
+    {
+     "district": 9,
+     "buildings": 21638,
+     "cases": 1175,
+     "flagged": 140,
+     "case_share": 0.076,
+     "flag_share": 0.07,
+     "precision": 0.6214,
+     "recall": 0.074,
+     "recall_ratio": 0.93,
+     "fdr_ratio": 0.98,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 10,
+     "buildings": 14502,
+     "cases": 774,
+     "flagged": 208,
+     "case_share": 0.0501,
+     "flag_share": 0.104,
+     "precision": 0.5673,
+     "recall": 0.1525,
+     "recall_ratio": 1.92,
+     "fdr_ratio": 1.12,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 11,
+     "buildings": 11760,
+     "cases": 771,
+     "flagged": 159,
+     "case_share": 0.0499,
+     "flag_share": 0.0795,
+     "precision": 0.6478,
+     "recall": 0.1336,
+     "recall_ratio": 1.68,
+     "fdr_ratio": 0.91,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 12,
+     "buildings": 4484,
+     "cases": 120,
+     "flagged": 14,
+     "case_share": 0.0078,
+     "flag_share": 0.007,
+     "precision": 0.5714,
+     "recall": 0.0667,
+     "recall_ratio": 0.84,
+     "fdr_ratio": 1.11,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 13,
+     "buildings": 21545,
+     "cases": 879,
+     "flagged": 97,
+     "case_share": 0.0569,
+     "flag_share": 0.0485,
+     "precision": 0.567,
+     "recall": 0.0626,
+     "recall_ratio": 0.79,
+     "fdr_ratio": 1.12,
+     "under_served": true,
+     "over_flagged": false
+    },
+    {
+     "district": 14,
+     "buildings": 13934,
+     "cases": 1379,
+     "flagged": 244,
+     "case_share": 0.0892,
+     "flag_share": 0.122,
+     "precision": 0.5861,
+     "recall": 0.1037,
+     "recall_ratio": 1.3,
+     "fdr_ratio": 1.07,
+     "under_served": false,
+     "over_flagged": false
+    }
+   ]
+  },
+  "fairness_after_rerank": {
+   "watch_list": 2000,
+   "city_recall": 0.0768,
+   "city_precision": 0.593,
+   "districts": [
+    {
+     "district": 1,
+     "buildings": 19622,
+     "cases": 1525,
+     "flagged": 182,
+     "case_share": 0.0987,
+     "flag_share": 0.091,
+     "precision": 0.5275,
+     "recall": 0.063,
+     "recall_ratio": 0.82,
+     "fdr_ratio": 1.16,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 2,
+     "buildings": 15373,
+     "cases": 1467,
+     "flagged": 176,
+     "case_share": 0.0949,
+     "flag_share": 0.088,
+     "precision": 0.6761,
+     "recall": 0.0811,
+     "recall_ratio": 1.06,
+     "fdr_ratio": 0.8,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 3,
+     "buildings": 19380,
+     "cases": 1102,
+     "flagged": 135,
+     "case_share": 0.0713,
+     "flag_share": 0.0675,
+     "precision": 0.6,
+     "recall": 0.0735,
+     "recall_ratio": 0.96,
+     "fdr_ratio": 0.98,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 4,
+     "buildings": 23366,
+     "cases": 1737,
+     "flagged": 246,
+     "case_share": 0.1124,
+     "flag_share": 0.123,
+     "precision": 0.5732,
+     "recall": 0.0812,
+     "recall_ratio": 1.06,
+     "fdr_ratio": 1.05,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 5,
+     "buildings": 20829,
+     "cases": 808,
+     "flagged": 146,
+     "case_share": 0.0523,
+     "flag_share": 0.073,
+     "precision": 0.5137,
+     "recall": 0.0928,
+     "recall_ratio": 1.21,
+     "fdr_ratio": 1.19,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 6,
+     "buildings": 16961,
+     "cases": 1181,
+     "flagged": 150,
+     "case_share": 0.0764,
+     "flag_share": 0.075,
+     "precision": 0.6533,
+     "recall": 0.083,
+     "recall_ratio": 1.08,
+     "fdr_ratio": 0.85,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 7,
+     "buildings": 19745,
+     "cases": 1274,
+     "flagged": 183,
+     "case_share": 0.0825,
+     "flag_share": 0.0915,
+     "precision": 0.5301,
+     "recall": 0.0761,
+     "recall_ratio": 0.99,
+     "fdr_ratio": 1.15,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 8,
+     "buildings": 18449,
+     "cases": 1259,
+     "flagged": 158,
+     "case_share": 0.0815,
+     "flag_share": 0.079,
+     "precision": 0.519,
+     "recall": 0.0651,
+     "recall_ratio": 0.85,
+     "fdr_ratio": 1.18,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 9,
+     "buildings": 21638,
+     "cases": 1175,
+     "flagged": 164,
+     "case_share": 0.076,
+     "flag_share": 0.082,
+     "precision": 0.5854,
+     "recall": 0.0817,
+     "recall_ratio": 1.06,
+     "fdr_ratio": 1.02,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 10,
+     "buildings": 14502,
+     "cases": 774,
+     "flagged": 99,
+     "case_share": 0.0501,
+     "flag_share": 0.0495,
+     "precision": 0.7879,
+     "recall": 0.1008,
+     "recall_ratio": 1.31,
+     "fdr_ratio": 0.52,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 11,
+     "buildings": 11760,
+     "cases": 771,
+     "flagged": 76,
+     "case_share": 0.0499,
+     "flag_share": 0.038,
+     "precision": 0.7632,
+     "recall": 0.0752,
+     "recall_ratio": 0.98,
+     "fdr_ratio": 0.58,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 12,
+     "buildings": 4484,
+     "cases": 120,
+     "flagged": 17,
+     "case_share": 0.0078,
+     "flag_share": 0.0085,
+     "precision": 0.5294,
+     "recall": 0.075,
+     "recall_ratio": 0.98,
+     "fdr_ratio": 1.16,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 13,
+     "buildings": 21545,
+     "cases": 879,
+     "flagged": 115,
+     "case_share": 0.0569,
+     "flag_share": 0.0575,
+     "precision": 0.5217,
+     "recall": 0.0683,
+     "recall_ratio": 0.89,
+     "fdr_ratio": 1.18,
+     "under_served": false,
+     "over_flagged": false
+    },
+    {
+     "district": 14,
+     "buildings": 13934,
+     "cases": 1379,
+     "flagged": 153,
+     "case_share": 0.0892,
+     "flag_share": 0.0765,
+     "precision": 0.6275,
+     "recall": 0.0696,
+     "recall_ratio": 0.91,
+     "fdr_ratio": 0.92,
+     "under_served": false,
+     "over_flagged": false
+    }
+   ]
+  }
+ },
  "classes": [
   "home",
   "multifamily",
@@ -307,6 +747,18 @@
    "dtype": "uint8",
    "offset": 4106996,
    "length": 241588
+  },
+  {
+   "name": "mu",
+   "dtype": "float32",
+   "offset": 4348584,
+   "length": 241588
+  },
+  {
+   "name": "district",
+   "dtype": "uint8",
+   "offset": 5314936,
+   "length": 241588
   }
  ],
  "events_layout": [
@@ -332,6 +784,18 @@
    "name": "kind",
    "dtype": "uint8",
    "offset": 3174172,
+   "length": 317417
+  },
+  {
+   "name": "b",
+   "dtype": "int32",
+   "offset": 3491592,
+   "length": 317417
+  },
+  {
+   "name": "new_case",
+   "dtype": "uint8",
+   "offset": 4761260,
    "length": 317417
   }
  ],

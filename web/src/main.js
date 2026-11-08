@@ -5,7 +5,8 @@ import { ScatterplotLayer, ColumnLayer, ArcLayer } from '@deck.gl/layers';
 import { HexagonLayer } from '@deck.gl/aggregation-layers';
 import { DataFilterExtension } from '@deck.gl/extensions';
 import { load, dayToDate, dateToDay } from './data.js';
-import { renderClaim, renderList, renderDossier, renderHud, renderLegend, veilAddr, renderWholesale, renderLead, LIST_COLOR } from './panels.js';
+import { renderClaim, renderList, renderDossier, renderHud, renderLegend, veilAddr, renderWholesale, renderLead, LIST_COLOR,
+  renderHouseIdle, renderHouse } from './panels.js';
 import './style.css';
 
 const STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json';
@@ -37,8 +38,11 @@ const KIND_COLOR = [
 
 const state = {
   mode: 'spread', day: 730, playing: false, filter: 'all', selected: null, veil: true, list: 'first_spark', lead: null,
+  house: null, // { i, stab: [building indices], res, fb, busy, status }
 };
-let D, map, overlay, cutoffDay, todayDay, backtestTop, hitDay;
+let D, map, overlay, cutoffDay, todayDay, backtestTop, hitDay, sim, simReady = false;
+const RUNS = 400, SEED = 20261107;
+const HK_TO_KIND = [0, 1, 2, 4, 5]; // Hawkes kind -> KIND_COLOR index
 
 function fmtDate(d) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
@@ -92,7 +96,11 @@ function layers() {
     data: { length: n, attributes: { getPosition: { value: bPos, size: 2 } } },
     getFillColor: (_, { index }) => b.class[index] === 0 ? [120, 112, 100, 70] : [201, 162, 90, 120],
     getRadius: 14, radiusMinPixels: 0.6, radiusMaxPixels: 3,
+    pickable: state.mode === 'house', onClick: ({ index }) => index >= 0 && pickHouse(index),
+    updateTriggers: { pickable: state.mode },
   }));
+
+  if (state.mode === 'house') return out.concat(houseLayers());
 
   if (state.mode === 'spread' || state.mode === 'backtest' || state.mode === 'wholesale') {
     const lo = state.mode === 'backtest' ? cutoffDay : state.day - 60;
@@ -190,8 +198,72 @@ function layers() {
   return out;
 }
 
+function houseLayers() {
+  const { b, hawkes } = D, out = [], H = state.house, r = H?.res;
+  if (hawkes?.arcs?.length) {
+    out.push(new ArcLayer({
+      id: 'trigger-arcs', data: hawkes.arcs,
+      getSourcePosition: a => [a[0], a[1]], getTargetPosition: a => [a[2], a[3]],
+      getSourceColor: a => [...KIND_COLOR[HK_TO_KIND[a[6]]], r ? 50 : Math.round(90 + 165 * a[4])],
+      getTargetColor: a => [255, 236, 200, r ? 40 : Math.round(60 + 160 * a[4])],
+      getWidth: a => 0.6 + 2.2 * a[4], getHeight: 1.6, widthMinPixels: 0.6,
+      updateTriggers: { getSourceColor: !!r, getTargetColor: !!r },
+    }));
+  }
+  if (!H) return out;
+  const fx = [b.lon[H.i], b.lat[H.i]];
+  out.push(new ScatterplotLayer({
+    id: 'house-rings', data: [{ r: 700, a: 60 }, { r: 250, a: 190 }], getPosition: () => fx, getRadius: d => d.r,
+    stroked: true, filled: false, getLineColor: d => [255, 190, 140, d.a], lineWidthMinPixels: 1,
+  }));
+  if (!r) return out;
+  const t = Math.max(0, Math.min(90, state.day - todayDay)), N = r.N;
+  const pBy = (r.withS || r.base).pBy, stab = new Set(H.stab);
+  const data = Array.from({ length: N }, (_, a) => a);
+  out.push(new ColumnLayer({
+    id: 'house-odds', data, pickable: true,
+    getPosition: a => [b.lon[r.glob[a]], b.lat[r.glob[a]]],
+    getElevation: a => stab.has(r.glob[a]) ? 0.02 : pBy[t * N + a],
+    elevationScale: 900 * Math.min(1, zf() * 2.2), radius: 7, diskResolution: 6, extruded: true,
+    getFillColor: a => {
+      const g = r.glob[a];
+      if (g === H.i) return [255, 236, 200, 255];
+      if (stab.has(g)) return [...LICHEN, 255];
+      const p = Math.min(1, pBy[t * N + a] * 2.5);
+      return [92 + 163 * p, 88 + 90 * p, 82 + 28 * p, 120 + 135 * p];
+    },
+    updateTriggers: { getElevation: [t, r, H.stab.join()], getFillColor: [t, r, H.stab.join()] },
+    onClick: ({ object }) => object !== undefined && pickHouse(r.glob[object]),
+    material: { ambient: 0.6, diffuse: 0.5, shininess: 18 },
+  }));
+  if (H.stab.length) {
+    out.push(new ScatterplotLayer({
+      id: 'house-stab', data: H.stab, getPosition: g => [b.lon[g], b.lat[g]], getRadius: 28, radiusMinPixels: 7,
+      stroked: true, filled: true, getFillColor: [...LICHEN, 40], getLineColor: [...LICHEN, 255], lineWidthMinPixels: 1.6,
+      parameters: { depthTest: false },
+    }));
+  }
+  const top = r.drivers.top.filter(d => !d.self);
+  const vmax = Math.max(...top.map(d => d.v), 1e-9);
+  out.push(new ArcLayer({
+    id: 'house-drivers', data: top,
+    getSourcePosition: d => [d.lon, d.lat], getTargetPosition: () => fx,
+    getSourceColor: d => [...KIND_COLOR[d.kind], 255], getTargetColor: [255, 236, 200, 255],
+    getWidth: d => 1.5 + 5 * d.v / vmax, getHeight: 0.9,
+  }));
+  return out;
+}
+
 function caption() {
   const { meta } = D;
+  if (state.mode === 'house') {
+    const r = state.house?.res, t = Math.max(0, state.day - todayDay);
+    if (!state.house) return `Arcs join each report since ${D.hawkes?.arcs_window_start || '—'} to the earlier report that most likely ` +
+      'set it off (stochastic declustering). Click any building to simulate its next 90 days.';
+    if (!r) return state.house.status || 'simulating …';
+    return `Day ${t} of 90 ahead: column height is each house's chance of a new report by then, across ${r.runs} simulated ` +
+      `futures. ${r.N.toLocaleString()} buildings within 700 m.`;
+  }
   if (state.mode === 'backtest') {
     const landed = backtestTop.reduce((a, _, r) => a + (hitDay[r] <= state.day ? 1 : 0), 0);
     const days = Math.max(0, state.day - cutoffDay);
@@ -227,13 +299,16 @@ function setMode(mode) {
   if (mode === 'backtest') { sl.min = cutoffDay; sl.max = cutoffDay + 90; state.day = cutoffDay; }
   else if (mode === 'forecast') { sl.min = todayDay; sl.max = todayDay + D.meta.horizon_days; state.day = todayDay + 45; }
   else { sl.min = 0; sl.max = todayDay; state.day = todayDay; }
-  const ws = mode === 'wholesale';
-  document.getElementById('list-wrap').hidden = ws;
+  const ws = mode === 'wholesale', hs = mode === 'house';
+  if (hs) { sl.min = todayDay; sl.max = todayDay + 90; state.day = todayDay + 90; }
+  document.getElementById('list-wrap').hidden = ws || hs;
   document.getElementById('wholesale').hidden = !ws;
-  document.getElementById('claim').hidden = ws;
+  document.getElementById('house').hidden = !hs;
+  document.getElementById('claim').hidden = ws || hs;
   document.getElementById('dossier').hidden = true;
-  state.selected = null; state.lead = null;
+  state.selected = null; state.lead = null; state.house = null;
   if (ws) renderWholesale(D, state, pickLead, () => redraw());
+  if (hs) renderHouseIdle(D);
   document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
   renderLegend(mode);
   drawTicks();
@@ -271,6 +346,61 @@ function select(h) {
   redraw();
 }
 
+// ---------- house by house: the simulator runs in a worker ----------
+
+function houseActions() {
+  return {
+    close: () => { state.house = null; renderHouseIdle(D); map.flyTo({ ...HOME_VIEW, speed: 0.8 }); redraw(); },
+    toggle: () => {
+      const H = state.house, k = H.stab.indexOf(H.i);
+      if (k >= 0) H.stab.splice(k, 1); else H.stab.push(H.i);
+      H.fb = null; runSim();
+    },
+    clear: () => { state.house.stab = []; state.house.fb = null; runSim(); },
+    firebreaks: () => {
+      const H = state.house; H.busy = true; H.status = 'searching firebreaks …';
+      renderHouse(D, H, houseActions());
+      sim.postMessage({ type: 'firebreaks', i: H.i, k: 3, stab: H.stab.filter(g => g !== H.i) });
+    },
+    fly: g => map.flyTo({ center: [D.b.lon[g], D.b.lat[g]], zoom: 16.4, speed: 0.9 }),
+  };
+}
+
+function runSim() {
+  const H = state.house;
+  H.busy = true; H.status = simReady ? `simulating ${RUNS} futures …` : 'indexing 241,000 buildings for the simulator …';
+  renderHouse(D, H, houseActions());
+  sim.postMessage({ type: 'focus', i: H.i, stab: H.stab, runs: RUNS, seed: SEED });
+}
+
+function onSim({ data: msg }) {
+  const H = state.house;
+  if (msg.type === 'ready') { simReady = true; if (H && !H.res) { H.status = `simulating ${RUNS} futures …`; renderHouse(D, H, houseActions()); } return; }
+  if (!H) return;
+  if (msg.type === 'progress') { H.status = msg.text; const el = document.querySelector('#house .small:last-of-type'); if (el) el.textContent = msg.text; return; }
+  if (msg.type === 'firebreaks') {
+    H.fb = msg; H.stab = [...new Set([...H.stab.filter(g => g !== H.i), ...msg.picks.map(p => p.g)])];
+    return runSim();
+  }
+  if (msg.type === 'result' && msg.i === H.i) {
+    H.res = msg; H.busy = false; H.status = '';
+    renderHouse(D, H, houseActions());
+    redraw();
+  }
+}
+
+function pickHouse(i) {
+  if (state.mode !== 'house') return;
+  const prev = state.house;
+  state.house = { i, stab: prev ? prev.stab : [], res: null, fb: null, busy: true, status: '' };
+  if (!prev || Math.hypot((D.b.lon[prev.i] - D.b.lon[i]) * 93600, (D.b.lat[prev.i] - D.b.lat[i]) * 111320) > 400) {
+    state.house.stab = [];
+    map.flyTo({ center: [D.b.lon[i], D.b.lat[i]], zoom: 15.6, pitch: 60, bearing: -24, speed: 0.9 });
+  }
+  runSim();
+  redraw();
+}
+
 function pickLead(l) {
   state.lead = l;
   renderLead(l, D, state);
@@ -290,6 +420,16 @@ async function main() {
   D.expected = b.risk.reduce((a, r) => a + r / 255, 0);
   backtestTop = topIndices(b.risk_backtest, meta.model.network.watch_list);
   computeHits();
+  if (D.hawkes && b.mu) {
+    sim = new Worker(new URL('./sim.worker.js', import.meta.url), { type: 'module' });
+    sim.onmessage = onSim;
+    sim.postMessage({
+      type: 'init', today: todayDay, params: D.hawkes.params,
+      spill: meta.assumptions.spillover_pct_per_case.value, spillR: meta.assumptions.spillover_radius_m.value,
+      b: { n, lon: b.lon.slice(), lat: b.lat.slice(), mu: b.mu.slice(), value: b.value.slice(), class: b.class.slice() },
+      e: { m, lon: e.lon.slice(), lat: e.lat.slice(), day: e.day.slice(), kind: e.kind.slice(), b: e.b.slice(), new_case: e.new_case.slice() },
+    });
+  }
 
   map = new maplibregl.Map({ container: 'map', style: await pickStyle(), ...HOME_VIEW, antialias: true, attributionControl: { compact: true } });
   overlay = new MapboxOverlay({ interleaved: false, layers: [], getTooltip: ({ object }) => object?.address &&
@@ -322,9 +462,11 @@ async function main() {
   });
   window.addEventListener('keydown', ev => {
     if (ev.key === 'Escape' && state.lead) { state.lead = null; document.getElementById('dossier').hidden = true; map.flyTo({ ...HOME_VIEW, speed: 0.8 }); redraw(); }
+    if (ev.key === 'Escape' && state.house) { houseActions().close(); }
     if (ev.key === 'Escape' && state.selected) { state.selected = null; document.getElementById('dossier').hidden = true; map.flyTo({ ...HOME_VIEW, speed: 0.8 }); redraw(); }
     if (ev.key === ' ' && ev.target === document.body) { ev.preventDefault(); document.getElementById('play').click(); }
   });
+  if (import.meta.env.DEV) window.__fb = { pickHouse, state, D }; // console hooks for local testing only
   document.getElementById('loading').remove();
   setMode('spread');
 }

@@ -41,7 +41,7 @@ INFRA = [
     "Tree Down/Low Limbs - TPW",
 ]
 FIELDS = ["service_request_number", "address", "service_request_type", "department", "created_date", "closed_date", "status",
-          "lat_location"]
+          "lat_location", "city_council_district"]
 PAGE = 50000
 
 

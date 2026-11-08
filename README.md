@@ -45,6 +45,50 @@ Most teams will build a dashboard with a risk score. We **measure** the hidden l
 
 **What to say if asked:** the top-2,000 list scores the same with or without network links (1,228 vs 1,229 hits), because buildings with a long report history dominate it. The network gives a higher AUC (0.735 vs 0.727) and found about 20% more first-time cases among buildings with no history in our test runs. Those first-time cases are where spread happens.
 
+## House by house: how much one report raises the odds next door
+
+The watch list says *which* buildings. `[ house by house ]` says *how it spreads* and *where to cut it*. It runs a self-exciting point process (a spatio-temporal Hawkes model) fitted to every Dallas property report, house by house:
+
+```text
+rate of new reports at house i  =  background(i's DCAD record, i's reports last year)
+                                 +  sum over earlier reports e within 250 m:
+                                      a[kind of e] * exp(-distance / 50 m) * fade(days since e)
+```
+
+| Result | Number |
+|---|---|
+| Share of 2025 reports set off by an earlier report nearby, on the weeks-long scale | **39%** (another 22% are same-hour echoes of one problem) |
+| How fast a report's push fades | 27 days on average; 50 m distance scale |
+| Held-out fit, Jan to Jun 2026, against the same background with no spread | **+1.10 nats per report** |
+| New reports each report sets off (same house + neighbours) | code 0.29, tenant 0.31, rental 0.23, vacancy 0.25, nuisance 0.29 |
+| As a ranker (top 2,000 on Jul 1, 2026) | 54%, below the boosted model's 61%, so the list stays boosted and Hawkes runs the what-if |
+
+Click any building and the console:
+
+1. **Simulates its next 90 days**: 400 random futures for every building within 700 m, in a Web Worker. Each simulated report pushes on its own house and its neighbours, so cascades happen. Column height is each house's chance of a report by the day on the slider.
+2. **Explains it**: background vs. its own past reports vs. neighbours' reports, and the specific nearby reports pushing on it, drawn as arcs.
+3. **Stabilize this house**: the house stops producing reports and its past reports stop pushing on neighbours. Every scenario reuses the same random seeds, so the difference is the intervention, not luck.
+4. **Find 3 firebreaks**: a lazy greedy search (CELF) over the 24 most active houses, scored with exact expected counts, for the houses whose stabilization spares the most reports at *other* houses. Then it re-simulates and prices the result with the neighbour-value rule below.
+
+With no house picked, arcs link each report since mid-2026 to the earlier report that most likely set it off (stochastic declustering).
+
+### Two checks a city would ask for (held-out Jul 1, 2026)
+
+| Check | Result |
+|---|---|
+| **Days of warning.** A crew visits 50 buildings a day in our order. | Reaches **1,018 cases before the first 311 call**, a median **18.5 days early**. Last year's complaint counts reach 938. Waiting for calls reaches none. |
+| **Fair across the 14 council districts.** Each district's share of its real cases on the list, against the city. | Districts 1, 3, 5, 8 and 13 fall under 0.8 of the city (the four-fifths rule). Giving each district slots in proportion to the cases the model expects there fixes all 5, for precision 61.4% to 59.3%. |
+
+### What we took from earlier work, and what we changed
+
+| Prior work | What it did | What Firebreak adds |
+|---|---|---|
+| Chicago food-inspection forecasting (City of Chicago, 2014) | Found violations about 7 days sooner by reordering inspections | The same days-early metric on building distress, with a crew capacity and a complaint-count baseline |
+| DSSG Cincinnati blight and the Triage / Aequitas tools | House-by-house inspection lists, then a bias audit | The audit by council district *and* a label-free re-ranking that passes it |
+| Mohler et al. (2011), self-exciting crime models | EM with stochastic declustering for burglary | Kind-dependent triggering (5 report kinds), same-house vs. neighbour terms, two time scales, duplicate removal |
+| Rome road-accident Hawkes (Alaimo Di Loro et al.) | Covariates in the background rate | DCAD covariates plus a chronic-history term, so a chronically troubled house is not forgotten after a month |
+| Kempe, Kleinberg & Tardos (2003); CELF (Leskovec et al. 2007) | Pick the seeds that spread the most | Run in reverse: pick the houses whose repair stops the most spread |
+
 ## The demo
 
 Plan for a 3 minute pitch and 2 minutes of questions.
@@ -54,7 +98,8 @@ Plan for a 3 minute pitch and 2 minutes of questions.
 3. **Proof.** Click `[ proof ]`. The model is frozen on Jul 1, 2026. Press play. Watch columns turn green as reports land on the buildings it flagged. "It called 1,228 of 2,000. Chance would have called about 128."
 4. **Next 90 days.** The city becomes a terrain of expected reports that rises as you drag forward.
 5. **Act.** Click the top hotspot. The camera flies in and the owner's other buildings arc out. Show why, what spreading costs, and the crew's plan. **Hold to approve.**
-6. **Wholesale (if time allows, or in Q&A).** Click `[ wholesale ]`. "The same signal finds motivated sellers before any list provider does." Open *Code stack* and *Tired landlord* and read their backtest hit rates, then queue one lead for WHOLZR.
+6. **House by house.** Click `[ house by house ]`: arcs show which report set off which. Click a hot house. "33% chance of a new report, and here is what is pushing on it." Press **find 3 firebreaks** and read the reports spared and the neighbour value protected. Drag the slider to watch the odds rise over 90 days.
+7. **Wholesale (if time allows, or in Q&A).** Click `[ wholesale ]`. "The same signal finds motivated sellers before any list provider does." Open *Code stack* and *Tired landlord* and read their backtest hit rates, then queue one lead for WHOLZR.
 
 ## The numbers behind the dollars
 
@@ -125,11 +170,14 @@ backend/firebreak/
   dcad.py        DCAD tax roll: buildings, owners (hashed), business tenants, condition, units, lease area
   geo.py         put buildings on the map: 311 positions, then house-number interpolation along the street
   model.py       features as of any date, labels 90 days later, base vs network models, the link tests
+  hawkes.py      house-by-house Hawkes model: EM fit, held-out test, declustering arcs, expected reports
+  audit.py       days-of-warning metric, fairness by council district, district-fair re-ranking
   plan.py        reports prevented next door, dollars, WHOLZR underwriting, buyer matching, crew plan
   lists.py       wholesale lead lists, their backtest, and the private owner export for WHOLZR
   build.py       runs everything and writes web/public/data/
 web/src/
-  main.js        deck.gl + MapLibre map: spread, proof, next-90-days and wholesale modes, time slider
+  main.js        deck.gl + MapLibre map: spread, proof, next-90-days, wholesale and house-by-house modes, time slider
+  sim.worker.js  Monte Carlo cascades, exact expected counts and the CELF firebreak search, off the main thread
   panels.js      claim card, hotspot list, dossier, hold to approve
 ```
 
@@ -166,3 +214,4 @@ Claude Code picks up the board from the project hooks on its own. Any other agen
 - Agent board: [hackathon-agent-board](https://github.com/azizu06/hackathon-agent-board). `tools/board` and `.claude/` are copied unchanged, and `AGENTS.md` is adapted from its template.
 - Data: Dallas Central Appraisal District 2026 export and Dallas Open Data 311 Service Requests. Basemap © CARTO, © OpenStreetMap contributors.
 - Spillover rate: Immergluck, D. & Smith, G. (2006), "The External Costs of Foreclosure," *Housing Policy Debate* 17(1).
+- Methods: Mohler, G. et al. (2011), "Self-exciting point process modeling of crime," *JASA* 106(493); Kempe, D., Kleinberg, J. & Tardos, É. (2003), "Maximizing the spread of influence through a social network," KDD; Leskovec, J. et al. (2007), "Cost-effective outbreak detection in networks," KDD; City of Chicago food-inspection forecasting (2014); Data Science for Social Good, Cincinnati blight and the Aequitas bias audit toolkit; Alaimo Di Loro, P. et al., spatio-temporal Hawkes models for road accidents in Rome. No code from these projects is used.

@@ -1,6 +1,6 @@
 // Loads the files the backend writes to web/public/data/ (see docs/CONTRACT.md).
 
-const TYPES = { float32: Float32Array, uint8: Uint8Array, uint16: Uint16Array, uint32: Uint32Array };
+const TYPES = { float32: Float32Array, uint8: Uint8Array, uint16: Uint16Array, uint32: Uint32Array, int32: Int32Array };
 
 function unpack(buf, layout) {
   const cols = {};
@@ -27,7 +27,8 @@ export async function load(base = './data') {
     fetchBin(`${base}/events`),
     fetch(`${base}/hotspots.json`).then(r => r.json()),
   ]);
-  const lists = await fetch(`${base}/lists.json`).then(r => (r.ok ? r.json() : null)).catch(() => null);
+  const opt = name => fetch(`${base}/${name}`).then(r => (r.ok ? r.json() : null)).catch(() => null);
+  const [lists, hawkes] = await Promise.all([opt('lists.json'), opt('hawkes.json')]);
   const b = unpack(bBuf, meta.buildings_layout);
   const e = unpack(eBuf, meta.events_layout);
   const n = meta.buildings_layout[0].length;
@@ -39,7 +40,7 @@ export async function load(base = './data') {
   const ePos = new Float32Array(m * 2);
   for (let i = 0; i < m; i++) { ePos[2 * i] = e.lon[i]; ePos[2 * i + 1] = e.lat[i]; }
 
-  return { meta, b, e, n, m, bPos, ePos, hotspots, lists };
+  return { meta, b, e, n, m, bPos, ePos, hotspots, lists, hawkes };
 }
 
 export const DAY = 86400000;

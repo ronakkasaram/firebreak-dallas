@@ -67,3 +67,47 @@ def test_owner_occupied_homes_never_make_a_wholesale_list():
                   {"parcel_id": "b", "homestead": False, "absentee": True}])
     p["units"] = np.nan
     assert lists.universe(p).tolist() == [False, True]
+
+
+def test_hawkes_recovers_planted_self_triggering():
+    from firebreak import hawkes
+    rng = np.random.default_rng(0)
+    n, mu, a, beta, days = 300, 0.01, 0.5, 1 / 30, 900
+    # Buildings 1 km apart, so only self-triggering is present.
+    lat = 32.78 + (np.arange(n) // 20) * 0.01
+    lon = -96.8 + (np.arange(n) % 20) * 0.012
+    rows = []
+    for i in range(n):
+        gen = list(rng.uniform(0, days, rng.poisson(mu * days)))
+        while gen:
+            t = gen.pop()
+            rows.append((t, i))
+            gen += [t + d for d in rng.exponential(1 / beta, rng.poisson(a)) if t + d < days]
+    t0 = pd.Timestamp("2024-01-01")
+    ev = pd.DataFrame({"t": [t0 + pd.Timedelta(days=t) for t, _ in rows], "key": [f"{i} A ST|75201" for _, i in rows],
+                       "lat": [lat[i] for _, i in rows], "lon": [lon[i] for _, i in rows]})
+    ev["property"], ev["kind"] = True, "code"
+    pxy = geo.xy(lat, lon)
+    key_index = {f"{i} A ST|75201": i for i in range(n)}
+    W = hawkes.window(pxy, key_index, ev, t0, t0 + pd.Timedelta(days=180), t0 + pd.Timedelta(days=days))
+    P = hawkes.fit(W, np.ones((n, 1)), sigma=50.0, iters=60)
+    assert 0.3 < P.a_self[0] < 0.7
+    assert abs(np.exp(P.theta[0]) - mu) < 0.004
+    assert P.a_nb[0] < 0.01
+
+
+def test_district_fair_rerank_gives_slots_by_expected_cases():
+    from firebreak import audit
+    district = np.array([1] * 50 + [2] * 50)
+    s = np.concatenate([np.full(50, 0.9), np.full(50, 0.1)]) + np.linspace(0, 0.01, 100)
+    top = set(np.argsort(-audit.fair_rerank(district, s, watch=10))[:10])
+    assert sum(i < 50 for i in top) == 9 and sum(i >= 50 for i in top) == 1
+
+
+def test_lead_time_counts_only_visits_before_the_first_report():
+    from firebreak import audit
+    first = np.array([10.0, 0.0, np.nan, 5.0])
+    out = audit.lead_time(first, {"m": np.array([4.0, 3.0, 2.0, 1.0])}, capacity=1)
+    r = out["rankings"]["m"]
+    assert r["cases_reached_early"] == 2  # building 0 on day 0 (10 days early), building 3 on day 3 (2 days early)
+    assert r["median_days_ahead"] == 6.0

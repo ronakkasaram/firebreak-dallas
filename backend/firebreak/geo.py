@@ -52,7 +52,10 @@ def load_events(path) -> pd.DataFrame:
     e["key"] = e.street + "|" + e.zip
     e["property"] = e.service_request_type.isin(PROPERTY_TYPES)
     e["kind"] = e.service_request_type.map(KIND).fillna("infra")
-    return e[["t", "lat", "lon", "key", "property", "kind", "service_request_type", "days_open"]].reset_index(drop=True)
+    e["district"] = pd.to_numeric(e.get("city_council_district"), errors="coerce").fillna(0).astype(int) \
+        if "city_council_district" in e else 0
+    return e[["t", "lat", "lon", "key", "property", "kind", "service_request_type", "days_open",
+              "district"]].reset_index(drop=True)
 
 
 _NUM = re.compile(r"^(\d+)\s+(.*)$")

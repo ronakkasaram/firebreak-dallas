@@ -9,6 +9,8 @@ Outputs (see docs/CONTRACT.md for every field):
     buildings.bin    one record per building, packed columns (Float32 position, Uint8 scores)
     events.bin       every property report in the last 24 months (position, day, kind)
     hotspots.json    the 400 buildings where stabilizing now prevents the most damage, with plans
+    lists.json       wholesale lead lists with their backtest
+    hawkes.json      the house-by-house spread model: fitted parameters, held-out fit, trigger arcs
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ import pandas as pd
 
 import os
 
-from . import dcad, geo, lists, model, plan
+from . import audit, dcad, geo, hawkes, lists, model, plan
 
 ROOT = Path(__file__).resolve().parents[2]
 WORK = ROOT / "data" / "work"
@@ -156,12 +158,40 @@ def main() -> None:
         if ROOT in dest.resolve().parents or dest.resolve() == ROOT:
             raise SystemExit("FIREBREAK_PRIVATE_OUT must be outside the repo: it holds owner names.")
         log("private lead export", lists.export_private(lead_rows, Path(os.environ.get("DCAD_ZIP", dcad.DEFAULT_ZIP)), dest))
+    log("audit: lead time and council districts")
+    first = audit.first_report_day(w, T_eval)
+    district = audit.districts(parcels, events)
+    risk_eval_base = base_eval.predict_proba(X_eval[model.BASE])[:, 1]
+    fair_eval = audit.fair_rerank(district, risk_eval)
+    audit_out = {
+        "cutoff": EVAL_TEST,
+        "lead_time": audit.lead_time(first, {
+            "network": risk_eval, "base": risk_eval_base, "district_fair": fair_eval,
+            "last_year_count": X_eval.own365.to_numpy() + 1e-3 * X_eval.own_all.to_numpy()}),
+        "fairness": audit.fairness(district, hit_eval, risk_eval),
+        "fairness_after_rerank": audit.fairness(district, hit_eval, fair_eval),
+    }
+    log(json.dumps(audit_out["lead_time"]))
+
+    log("hawkes")
+    hk = hawkes.run(parcels, w.pxy, events, today, log=log)
+    P_h, Z_h, ki_h = hk.pop("_P"), hk.pop("_Z"), hk.pop("_key_index")
+    mu = hk.pop("mu")
+    m_eval = hawkes.expected_reports(P_h, Z_h, w.pxy, ki_h, events, T_eval)
+    top_h = np.argsort(-m_eval)[:2000]
+    hk["as_ranker"] = {"cutoff": EVAL_TEST, "watch_precision": round(float(hit_eval[top_h].mean()), 4),
+                       "gbm_watch_precision": report["network"]["watch_precision"],
+                       "note": "The gradient-boosted model ranks better; Hawkes is used to simulate spread, not to rank."}
+    hk["as_of"] = today.strftime("%Y-%m-%d")
+    (OUT / "hawkes.json").write_text(json.dumps(hk, default=float))
+
     cls = parcels.asset_class.map(model.CLASS_CODE).to_numpy().astype(np.uint8)
     cols = [
         ("lon", parcels.lon.to_numpy(np.float32)), ("lat", parcels.lat.to_numpy(np.float32)),
         ("value", parcels.value.to_numpy(np.float32)),
         ("risk", _u8(risk)), ("lift", _u8(lift_pts * 4)), ("risk_backtest", _u8(risk_eval)), ("hit_backtest", hit_eval),
         ("class", cls), ("reports_365", np.clip(Xn.own365.to_numpy(), 0, 255).astype(np.uint8)),
+        ("mu", mu.astype(np.float32)), ("district", district.astype(np.uint8)),
     ]
     layout, offset = [], 0
     with open(OUT / "buildings.bin", "wb") as f:
@@ -174,8 +204,13 @@ def main() -> None:
 
     ev = events[events.t >= today - pd.Timedelta(days=730)]
     day = ((ev.t - (today - pd.Timedelta(days=730))).dt.days).to_numpy(np.uint16)
+    # Building index of each report (-1 if not at a known building), and whether it is a new case
+    # rather than a repeat of the same kind at the same address within 2 days (the Hawkes rule).
+    b = ev.key.map(w.key_index).fillna(-1).to_numpy(np.int32)
+    gap = ev.sort_values(["key", "kind", "t"]).groupby(["key", "kind"]).t.diff().reindex(ev.index)
+    new_case = (gap.isna() | (gap > pd.Timedelta(days=2))).to_numpy(np.uint8)
     ecols = [("lon", ev.lon.to_numpy(np.float32)), ("lat", ev.lat.to_numpy(np.float32)), ("day", day),
-             ("kind", ev.kind.map(KIND_CODE).to_numpy(np.uint8))]
+             ("kind", ev.kind.map(KIND_CODE).to_numpy(np.uint8)), ("b", b), ("new_case", new_case)]
     elayout, offset = [], 0
     with open(OUT / "events.bin", "wb") as f:
         for name, arr in ecols:
@@ -192,7 +227,7 @@ def main() -> None:
                    "infra_failures": int((~events.property).sum()),
                    "by_class": parcels.asset_class.value_counts().to_dict(),
                    "placed_by": parcels.geo_method.value_counts().to_dict()},
-        "model": report, "edges": edges, "assumptions": plan.ASSUMPTIONS,
+        "model": report, "edges": edges, "assumptions": plan.ASSUMPTIONS, "audit": audit_out,
         "classes": list(model.CLASS_CODE), "kinds": list(KIND_CODE),
         "buildings_layout": layout, "events_layout": elayout,
         "risk_scale": "uint8 / 255 = probability of a new report in 90 days",
