@@ -432,13 +432,29 @@ async function main() {
   }
 
   map = new maplibregl.Map({ container: 'map', style: await pickStyle(), ...HOME_VIEW, antialias: true, attributionControl: { compact: true } });
-  overlay = new MapboxOverlay({ interleaved: false, layers: [], getTooltip: ({ object }) => object?.address &&
+  overlay = new MapboxOverlay({ interleaved: false, layers: [], pickingRadius: 6, getTooltip: ({ object }) => object?.address &&
     { html: `<b>${state.veil && object.asset_class === 'home' ? veilAddr(object.address) : object.address}</b><br>` +
       `${object.asset_class} · ${(object.risk * 100).toFixed(0)}% · ` + (object.usd
         ? `$${Math.round(object.usd.exposure).toLocaleString()} at stake`
         : `offer $${Math.round(object.offer).toLocaleString()} · ${object.buyers_nearby} buyers nearby`),
       className: 'tip' } });
   map.addControl(overlay);
+  // In house mode a click that misses every dot picks the nearest building within 150 m.
+  let picked = 0;
+  overlay.setProps({ onClick: info => { if (info.picked) picked = performance.now(); } });
+  map.on('click', ev => {
+    if (state.mode !== 'house' || performance.now() - picked < 300) return;
+    setTimeout(() => {
+      if (performance.now() - picked < 300) return;
+      const { lng, lat } = ev.lngLat, { b, n } = D;
+      let best = -1, bd = 150 * 150;
+      for (let i = 0; i < n; i++) {
+        const dx = (b.lon[i] - lng) * 93600, dy = (b.lat[i] - lat) * 111320, d = dx * dx + dy * dy;
+        if (d < bd) { bd = d; best = i; }
+      }
+      if (best >= 0) pickHouse(best);
+    }, 0);
+  });
   let zRaf = 0;
   map.on('zoom', () => { cancelAnimationFrame(zRaf); zRaf = requestAnimationFrame(() => overlay.setProps({ layers: layers() })); });
 
