@@ -145,3 +145,22 @@ blockquote::after { content: "BROKEN"; position: absolute; right: -4px; bottom: 
   .hud-stats { display: none; }
   .mark { font-size: 24px; }
 }
+
+/* wholesale mode */
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 12px; }
+.tabs button { padding: 4px 8px; border: 1px solid var(--line); color: var(--muted); font-size: 10px; letter-spacing: .06em; }
+.tabs button.on { color: var(--c); border-color: var(--c); }
+.list-card { border-left: 2px solid var(--c); padding: 4px 0 4px 12px; margin-bottom: 14px; }
+.list-card h3 { margin: 0 0 4px; font: 400 22px/1.15 var(--serif); color: var(--c); }
+.list-card p { margin: 0 0 6px; color: var(--ink-2); }
+.list-card small { color: var(--muted); font-size: 10px; }
+.list-card .proof { margin-top: 10px; }
+.list-card .dl { color: var(--c); letter-spacing: .1em; font-size: 10px; }
+#leads { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow-y: auto; border-top: 1px solid var(--line); }
+#leads li { display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; padding: 8px 2px; border-bottom: 1px solid var(--line); cursor: pointer; align-items: center; }
+#leads li:hover { background: var(--panel-2); }
+#leads .rank { color: var(--muted); font-size: 10px; }
+#leads .who b { display: block; font: 400 14px/1.2 var(--serif); }
+#leads small { color: var(--muted); font-size: 9px; }
+#leads .num { text-align: right; }
+#leads .num b { display: block; color: var(--ember); }

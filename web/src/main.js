@@ -5,10 +5,19 @@ import { ScatterplotLayer, ColumnLayer, ArcLayer } from '@deck.gl/layers';
 import { HexagonLayer } from '@deck.gl/aggregation-layers';
 import { DataFilterExtension } from '@deck.gl/extensions';
 import { load, dayToDate, dateToDay } from './data.js';
-import { renderClaim, renderList, renderDossier, renderHud, renderLegend, veilAddr } from './panels.js';
+import { renderClaim, renderList, renderDossier, renderHud, renderLegend, veilAddr, renderWholesale, renderLead, LIST_COLOR } from './panels.js';
 import './style.css';
 
 const STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json';
+// Where outside tiles are blocked (a sandboxed preview), fall back to a plain dark ground:
+// 241,000 building dots draw the city on their own.
+const BARE = { version: 8, sources: {}, layers: [{ id: 'ground', type: 'background', paint: { 'background-color': '#07070a' } }] };
+async function pickStyle() {
+  try {
+    const r = await Promise.race([fetch(STYLE), new Promise((_, no) => setTimeout(() => no(new Error('timeout')), 2500))]);
+    return r.ok ? STYLE : BARE;
+  } catch { return BARE; }
+}
 const HOME_VIEW = { center: [-96.79, 32.80], zoom: 10.6, pitch: 52, bearing: -18 };
 
 // Night Survey palette
@@ -27,7 +36,7 @@ const KIND_COLOR = [
 ];
 
 const state = {
-  mode: 'spread', day: 730, playing: false, filter: 'all', selected: null, veil: true,
+  mode: 'spread', day: 730, playing: false, filter: 'all', selected: null, veil: true, list: 'first_spark', lead: null,
 };
 let D, map, overlay, cutoffDay, todayDay, backtestTop, hitDay;
 
@@ -85,13 +94,13 @@ function layers() {
     getRadius: 14, radiusMinPixels: 0.6, radiusMaxPixels: 3,
   }));
 
-  if (state.mode === 'spread' || state.mode === 'backtest') {
+  if (state.mode === 'spread' || state.mode === 'backtest' || state.mode === 'wholesale') {
     const lo = state.mode === 'backtest' ? cutoffDay : state.day - 60;
     out.push(new ScatterplotLayer({
       id: 'reports',
       data: { length: m, attributes: { getPosition: { value: ePos, size: 2 }, getFilterValue: { value: D.eDayF, size: 1 },
         getFillColor: { value: D.eColor, size: 4, normalized: true } } },
-      getRadius: 55, radiusMinPixels: 1.4, radiusMaxPixels: 10,
+      getRadius: 55, radiusMinPixels: 1.4, radiusMaxPixels: 10, opacity: state.mode === 'wholesale' ? 0.18 : 1,
       extensions: [new DataFilterExtension({ filterSize: 1 })],
       filterRange: [lo, state.day],
       filterSoftRange: state.mode === 'backtest' ? [lo, state.day] : [state.day - 20, state.day],
@@ -127,6 +136,29 @@ function layers() {
       material: { ambient: 0.55, diffuse: 0.6, shininess: 24 },
       transitions: { elevationScale: 250 },
     }));
+  }
+
+  if (state.mode === 'wholesale' && D.lists) {
+    const L = D.lists.lists.find(l => l.id === state.list) || D.lists.lists[0];
+    const col = LIST_COLOR[L.id] || EMBER;
+    out.push(new ScatterplotLayer({
+      id: 'leads-glow', data: L.leads, getPosition: l => [l.lon, l.lat], getRadius: 140, radiusMinPixels: 5, radiusMaxPixels: 26,
+      getFillColor: [...col, 40], parameters: { depthTest: false },
+    }));
+    out.push(new ScatterplotLayer({
+      id: 'leads', data: L.leads, pickable: true, autoHighlight: true, highlightColor: [255, 236, 200, 255],
+      getPosition: l => [l.lon, l.lat], getRadius: 70, radiusMinPixels: 4.5, radiusMaxPixels: 12, stroked: true, lineWidthMinPixels: 1,
+      getFillColor: l => l === state.lead ? [255, 236, 200, 255] : [...col, 245], getLineColor: [255, 236, 200, 200],
+      updateTriggers: { getFillColor: state.lead }, parameters: { depthTest: false },
+      onClick: ({ object }) => object && pickLead(object),
+    }));
+    if (state.lead) {
+      out.push(new ScatterplotLayer({
+        id: 'lead-ring', data: [state.lead], getPosition: l => [l.lon, l.lat], getRadius: 250, stroked: true,
+        getFillColor: [...col, 20], getLineColor: [...col, 200], lineWidthMinPixels: 1.2,
+      }));
+    }
+    return out;
   }
 
   const shown = hotspots.filter(h => state.filter === 'all' || h.asset_class === state.filter);
@@ -171,6 +203,11 @@ function caption() {
     return `Expected new distress reports by this date: ${Math.round(D.expected * frac).toLocaleString()} ` +
       `(height = expected reports per hex).`;
   }
+  if (state.mode === 'wholesale') {
+    const L = D.lists?.lists.find(l => l.id === state.list);
+    return L ? `${L.title}: top ${L.leads.length} of ${L.eligible.toLocaleString()} houses that fit the rule. ` +
+      `Small dots are the last 60 days of reports.` : 'Run the backend build to make lists.json.';
+  }
   return state.day > todayDay ? 'Past today: switch to next 90 days.' :
     'Each dot is a 311 report about a building. Watch them cluster and spread block by block.';
 }
@@ -190,6 +227,13 @@ function setMode(mode) {
   if (mode === 'backtest') { sl.min = cutoffDay; sl.max = cutoffDay + 90; state.day = cutoffDay; }
   else if (mode === 'forecast') { sl.min = todayDay; sl.max = todayDay + D.meta.horizon_days; state.day = todayDay + 45; }
   else { sl.min = 0; sl.max = todayDay; state.day = todayDay; }
+  const ws = mode === 'wholesale';
+  document.getElementById('list-wrap').hidden = ws;
+  document.getElementById('wholesale').hidden = !ws;
+  document.getElementById('claim').hidden = ws;
+  document.getElementById('dossier').hidden = true;
+  state.selected = null; state.lead = null;
+  if (ws) renderWholesale(D, state, pickLead, () => redraw());
   document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
   renderLegend(mode);
   drawTicks();
@@ -227,6 +271,13 @@ function select(h) {
   redraw();
 }
 
+function pickLead(l) {
+  state.lead = l;
+  renderLead(l, D, state);
+  map.flyTo({ center: [l.lon, l.lat], zoom: 15, pitch: 55, bearing: -20, speed: 0.9 });
+  redraw();
+}
+
 async function main() {
   D = await load();
   const { meta, b, e, n, m } = D;
@@ -240,10 +291,12 @@ async function main() {
   backtestTop = topIndices(b.risk_backtest, meta.model.network.watch_list);
   computeHits();
 
-  map = new maplibregl.Map({ container: 'map', style: STYLE, ...HOME_VIEW, antialias: true, attributionControl: { compact: true } });
+  map = new maplibregl.Map({ container: 'map', style: await pickStyle(), ...HOME_VIEW, antialias: true, attributionControl: { compact: true } });
   overlay = new MapboxOverlay({ interleaved: false, layers: [], getTooltip: ({ object }) => object?.address &&
     { html: `<b>${state.veil && object.asset_class === 'home' ? veilAddr(object.address) : object.address}</b><br>` +
-      `${object.asset_class} · ${(object.risk * 100).toFixed(0)}% · $${Math.round(object.usd.exposure).toLocaleString()} at stake`,
+      `${object.asset_class} · ${(object.risk * 100).toFixed(0)}% · ` + (object.usd
+        ? `$${Math.round(object.usd.exposure).toLocaleString()} at stake`
+        : `offer $${Math.round(object.offer).toLocaleString()} · ${object.buyers_nearby} buyers nearby`),
       className: 'tip' } });
   map.addControl(overlay);
   let zRaf = 0;
@@ -268,6 +321,7 @@ async function main() {
     if (state.playing) requestAnimationFrame(tick);
   });
   window.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape' && state.lead) { state.lead = null; document.getElementById('dossier').hidden = true; map.flyTo({ ...HOME_VIEW, speed: 0.8 }); redraw(); }
     if (ev.key === 'Escape' && state.selected) { state.selected = null; document.getElementById('dossier').hidden = true; map.flyTo({ ...HOME_VIEW, speed: 0.8 }); redraw(); }
     if (ev.key === ' ' && ev.target === document.body) { ev.preventDefault(); document.getElementById('play').click(); }
   });

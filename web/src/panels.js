@@ -74,8 +74,123 @@ export function renderLegend(mode) {
       ['#be5aa0', 'vacancy'], ['#eb4646', 'nuisance'], ['#5a96c8', 'pipes, streets']],
     backtest: [['#ff6a2b', 'flagged on cutoff day'], ['#8fbf7a', 'report landed: called it']],
     forecast: [['#ff6a2b', 'expected new reports'], ['#c9a25a', 'firebreak: homes'], ['#ff6a2b', 'firebreak: commercial']],
+    wholesale: [['#ff6a2b', 'first spark'], ['#eb4646', 'code stack'], ['#c9a25a', 'tired landlord'], ['#be5aa0', 'block on fire']],
   }[mode];
   $('legend').innerHTML = items.map(([c, t]) => `<span><i style="background:${c}"></i>${t}</span>`).join('');
+}
+
+export const LIST_COLOR = {
+  first_spark: [255, 106, 43], code_stack: [235, 70, 70], tired_landlord: [201, 162, 90], block_fire: [190, 90, 160],
+};
+const hex = c => '#' + c.map(v => v.toString(16).padStart(2, '0')).join('');
+
+function csv(rows) {
+  const cols = ['list', 'parcel_id', 'address', 'zip', 'risk', 'reports_365', 'value', 'arv', 'repairs', 'buyer_price',
+    'offer', 'fee', 'buyers_nearby'];
+  const q = v => /[",\n]/.test(String(v ?? '')) ? `"${String(v).replace(/"/g, '""')}"` : (v ?? '');
+  return [cols.join(','), ...rows.map(r => cols.map(c => q(r[c])).join(','))].join('\n');
+}
+
+// Wholesale mode: the contagion signal pointed at motivated sellers, scored on the backtest date.
+export function renderWholesale(D, state, onPick, onChange) {
+  const el = $('wholesale');
+  if (!D.lists) { el.innerHTML = '<p class="muted">No lists.json yet. Run the backend build.</p>'; return; }
+  const draw = () => {
+    const L = D.lists.lists.find(l => l.id === state.list) || D.lists.lists[0];
+    const bt = L.backtest || {};
+    const viable = L.leads.filter(l => l.viable);
+    const fees = viable.reduce((a, l) => a + l.fee, 0);
+    el.innerHTML = `
+      <div class="kicker">Wholesale · find the seller before the first letter lands</div>
+      <p class="lede">List providers sell owners who <b>already</b> have a violation, so every wholesaler mails them the
+        same week. Firebreak ranks owners using the same spread signal, on houses no one else is watching yet.
+        Owner-occupied homes are never listed.</p>
+      <div class="tabs">${D.lists.lists.map(l => `<button data-l="${l.id}" class="${l.id === L.id ? 'on' : ''}"
+        style="--c:${hex(LIST_COLOR[l.id])}">${esc(l.title)}</button>`).join('')}</div>
+      <div class="list-card" style="--c:${hex(LIST_COLOR[L.id])}">
+        <h3>${esc(L.title)}</h3>
+        <p>${esc(L.pitch)}</p>
+        <small>${esc(L.rule)}</small>
+        <div class="proof">
+          <div><b>${pct(bt.hit_rate || 0)}</b><span>of the top ${bt.top} on ${D.lists.backtest_cutoff} got a new report
+            within 90 days</span></div>
+          <div><b>${(bt.lift || 0).toFixed(1)}×</b><span>the ${pct(bt.base_rate || 0)} rate for all non-owner-occupied
+            houses${bt.pool_rate != null ? `. The rule alone, unranked: ${pct(bt.pool_rate)}` : ''}</span></div>
+        </div>
+        <div class="roi"><b>${L.leads.length}</b> leads · <b>${viable.length}</b> pencil at 70% of ARV ·
+          <b>${kusd(fees)}</b> in minimum fees if every viable one closed</div>
+        <button class="dl">[ download csv ]</button>
+      </div>
+      <ol id="leads">${L.leads.slice(0, 60).map((l, k) => `
+        <li data-k="${k}">
+          <span class="rank">${String(k + 1).padStart(2, '0')}</span>
+          <span class="who"><b>${esc(shownAddr(l, state))}</b><small>${l.zip} · ${l.reports_365} reports ·
+            ${l.block_90d} on block · ${l.buyers_nearby} buyers</small></span>
+          <span class="num"><b>${pct(l.risk)}</b><small>${l.viable ? 'offer ' + kusd(l.offer) : 'no spread'}</small></span>
+        </li>`).join('')}</ol>`;
+    el.querySelector('.tabs').onclick = ev => {
+      const id = ev.target.dataset.l; if (!id) return;
+      state.list = id; state.lead = null; $('dossier').hidden = true; draw(); onChange();
+    };
+    el.querySelector('#leads').onclick = ev => {
+      const li = ev.target.closest('li'); if (li) onPick(L.leads[+li.dataset.k]);
+    };
+    el.querySelector('.dl').onclick = () => {
+      const blob = new Blob([csv(L.leads.map(l => ({ ...l, list: L.id })))], { type: 'text/csv' });
+      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `firebreak_${L.id}.csv` });
+      a.click(); URL.revokeObjectURL(a.href);
+    };
+  };
+  draw();
+}
+
+export function renderLead(l, D, state) {
+  const el = $('dossier');
+  const queued = store('fb-queued') || {};
+  el.hidden = false;
+  el.innerHTML = `
+    <div class="dossier-head">
+      <div class="kicker">${l.asset_class} lead · ${esc(D.lists.lists.find(x => x.id === state.list)?.title || '')}</div>
+      <h2>${esc(shownAddr(l, state))}</h2>
+      <div class="muted">Dallas ${l.zip}${l.year_built ? ` · built ${l.year_built}` : ''}${l.sqft ? ` · ${Math.round(l.sqft).toLocaleString()} sf` : ''}</div>
+    </div>
+    <div class="risk-row">
+      <div class="risk"><b>${pct(l.risk)}</b><span>chance of a new report in 90 days</span></div>
+      <div class="risk"><b>${pct(l.p_two_buyers)}</b><span>chance 2 repeat buyers want it (${l.buyers_nearby} nearby)</span></div>
+    </div>
+    <div class="kicker">Why this owner, why now</div>
+    <ul class="facts">
+      <li><span>Reports here</span><b>${l.reports_365} this year · ${l.reports_all} ever</b></li>
+      <li><span>Next door (50 m, 30 d)</span><b>${l.next_door_30d}</b></li>
+      <li><span>Block (250 m, 90 d)</span><b>${l.block_90d}</b></li>
+      <li><span>Owner</span><b>${l.owner.label ? esc(l.owner.label) : 'private owner'} · ${l.owner.buildings} buildings
+        ${l.owner.out_of_state ? '· out of state' : l.owner.absentee ? '· mails elsewhere' : ''}</b></li>
+      <li><span>Network adds</span><b>+${(l.network_pts * 100).toFixed(0)} pts</b></li>
+    </ul>
+    <div class="kicker">Oracle · rescue math</div>
+    <ul class="facts">
+      <li><span>DCAD value</span><b>${usd(l.value)}</b></li>
+      <li><span>After-repair value</span><b>${usd(l.arv)}</b></li>
+      <li><span>Repairs</span><b>${usd(l.repairs)}</b></li>
+      <li><span>Cash buyer pays</span><b>${usd(l.buyer_price)}</b></li>
+      <li><span>Offer to owner</span><b>${usd(l.offer)}</b></li>
+      <li class="total"><span>Assignment fee</span><b>${l.viable ? usd(l.fee) : 'does not pencil'}</b></li>
+    </ul>
+    <button class="sign ${queued[l.parcel_id] ? 'signed' : ''}" tabindex="0">
+      <span class="fill" style="width:${queued[l.parcel_id] ? 100 : 0}%"></span>
+      <span class="label">${queued[l.parcel_id] ? '[ queued for WHOLZR · a human sends ]' : '[ hold to queue for WHOLZR ]'}</span>
+    </button>
+    <p class="fine">Owner names and mailing addresses never leave the private WHOLZR export. Nothing is mailed from here.</p>`;
+  const btn = el.querySelector('.sign');
+  if (!queued[l.parcel_id]) {
+    holdButton(btn, 1100, () => {
+      queued[l.parcel_id] = new Date().toISOString();
+      store('fb-queued', queued);
+      btn.classList.add('signed');
+      btn.querySelector('.label').textContent = '[ queued for WHOLZR · a human sends ]';
+    });
+  }
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function holdButton(el, ms, done) {
@@ -132,7 +247,7 @@ export function renderDossier(h, D, state, onClose) {
     <ul class="facts money">
       <li><span>Neighbor value within 200 m</span><b>${kusd(h.usd.neighbor_value)}</b></li>
       <li><span>Expected value lost next door</span><b>${usd(h.usd.spillover)}</b></li>
-      <li><span>Rent at risk</span><b>${usd(h.usd.rent_at_risk)}</b></li>
+      <li><span>Rent exposed${h.usd.rent_use ? ` (${h.usd.rent_use} rate)` : ''} · case open ${h.usd.days_open ?? '—'} d</span><b>${usd(h.usd.rent_at_risk)}</b></li>
       <li><span>Reports prevented by acting now</span><b>${(h.risk + h.prevented_nearby).toFixed(2)}</b></li>
       <li class="total"><span>At stake</span><b>${usd(h.usd.exposure)}</b></li>
     </ul>

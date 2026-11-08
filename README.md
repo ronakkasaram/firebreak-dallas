@@ -54,6 +54,39 @@ Plan for a 3 minute pitch and 2 minutes of questions.
 3. **Proof.** Click `[ proof ]`. The model is frozen on Jul 1, 2026. Press play. Watch columns turn green as reports land on the buildings it flagged. "It called 1,228 of 2,000. Chance would have called about 128."
 4. **Next 90 days.** The city becomes a terrain of expected reports that rises as you drag forward.
 5. **Act.** Click the top hotspot. The camera flies in and the owner's other buildings arc out. Show why, what spreading costs, and the crew's plan. **Hold to approve.**
+6. **Wholesale (if time allows, or in Q&A).** Click `[ wholesale ]`. "The same signal finds motivated sellers before any list provider does." Open *Code stack* and *Tired landlord* and read their backtest hit rates, then queue one lead for WHOLZR.
+
+## The numbers behind the dollars
+
+Every dollar figure is built from real data or a published market figure. See [docs/MENTORS.md](docs/MENTORS.md) for what we still want CBRE to confirm.
+
+| Input | Value | Source |
+|---|---|---|
+| Office rent | $35.09/sf/yr, full service | CBRE DFW Office Figures Q3 2026 |
+| Retail rent | $21.62/sf/yr | Partners DFW Retail Q3 2026 |
+| Industrial rent | $9.76/sf/yr, net | Cushman & Wakefield DFW Industrial MarketBeat Q3 2026 |
+| Apartment rent | $1,461/unit/month, effective | Cushman & Wakefield DFW Multifamily MarketBeat Q3 2026 |
+| How long a case stays open | Median days, measured from 311: code 6.2, nuisance 8.5, tenant complaint 13.9, unregistered rental 23.4 | Dallas 311 report and close dates since 2022 |
+| Value lost next door | 0.9% per case within 200 m, residential neighbors only | Immergluck & Smith (2006) |
+
+The DCAD building type picks the rent rate: office, retail or industrial. Churches, schools, government buildings, parking and hotels get no rent. Rent at risk means rent exposed while a case is open, times the chance a case opens.
+
+## Wholesale lists: the same signal, pointed at sellers
+
+List providers sell owners who already have a violation or a lien, so every wholesaler mails them the same week. Firebreak ranks owners before that point. Each list is a rule. We applied every rule on Jul 1, 2026 and checked what happened to its top 300 leads in the next 90 days.
+
+| List | Rule | Rule alone | Our top 300 | Ranking adds |
+|---|---|---|---|---|
+| **Code stack** | 3+ reports in a year | 29% | **55%** | 1.9x |
+| **Tired landlord** | Owner holds 2+ houses, mails elsewhere, 2+ reports across them | 12% | **36%** | 3.0x |
+| **Block on fire** | Quiet house, block reports speeding up | 5.4% | **12%** | 2.3x |
+| **First spark** | Never had a report, absentee or company owner | 4.0% | **9.3%** | 2.3x |
+
+"Got a report" means a new 311 property report within 90 days of Jul 1, 2026. For comparison, 7.7% of all non-owner-occupied houses got one. "Rule alone" is every house that fits the rule, unranked. The ranking from the contagion model doubles or triples each rule's hit rate.
+
+- Owner-occupied homes are never listed. Firebreak sends them to repair programs instead.
+- Each lead gets the WHOLZR math: ARV, repairs, the 70% cash-buyer price, the offer, the $10,000 fee, and how many repeat buyers bought nearby at that price.
+- **Owner names stay private.** The public `lists.json` has no names. Set `FIREBREAK_PRIVATE_OUT` to a folder *outside* the repo and the build writes owner names and mailing addresses there for the WHOLZR engine. The build refuses a folder inside the repo.
 
 ## Who does what
 
@@ -62,7 +95,7 @@ Plan for a 3 minute pitch and 2 minutes of questions.
 | **Pipeline and model** (`backend/`) | Open | Run the pipeline, then improve the network features (time-decayed Hawkes kernel, report type mix) |
 | **Console** (`web/`) | `ronakkasaram` | Polish the 5-step demo path, then the 60-second stranger test |
 | **API and what-if** (`backend/server.py`, new) | Open | Serve hotspots, and recompute a plan when a judge changes an assumption |
-| **Numbers, Devpost, pitch** | Open | Ask CBRE mentors for the real rent and downtime numbers in `plan.ASSUMPTIONS` |
+| **Numbers, Devpost, pitch** | Open | Take [docs/MENTORS.md](docs/MENTORS.md) to the CBRE booth and write the answers into `plan.ASSUMPTIONS` |
 
 Claim a row by putting your login in it here and in [AGENTS.md](AGENTS.md).
 
@@ -93,9 +126,10 @@ backend/firebreak/
   geo.py         put buildings on the map: 311 positions, then house-number interpolation along the street
   model.py       features as of any date, labels 90 days later, base vs network models, the link tests
   plan.py        reports prevented next door, dollars, WHOLZR underwriting, buyer matching, crew plan
+  lists.py       wholesale lead lists, their backtest, and the private owner export for WHOLZR
   build.py       runs everything and writes web/public/data/
 web/src/
-  main.js        deck.gl + MapLibre map: spread, proof and next-90-days modes, time slider
+  main.js        deck.gl + MapLibre map: spread, proof, next-90-days and wholesale modes, time slider
   panels.js      claim card, hotspot list, dossier, hold to approve
 ```
 
@@ -105,7 +139,7 @@ web/src/
 - Owners that DCAD marks confidential (Texas Tax Code 25.025) are dropped. Over-65, disability and veteran fields are never loaded.
 - Homestead owners get help first: the plan offers City of Dallas repair programs, not a purchase offer.
 - Nothing is sent. Approvals stay in the browser.
-- Placeholder numbers are marked "Placeholder" in `plan.ASSUMPTIONS` and in `meta.json`. Replace them with mentor numbers before judging.
+- Rents come from Q3 2026 market reports and case durations are measured. The remaining placeholders (repair tiers, ARV factor, inspection cost) are marked "Placeholder" in `plan.ASSUMPTIONS`.
 
 ## Not building
 

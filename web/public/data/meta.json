@@ -187,18 +187,26 @@
   },
   "rent_psf_year": {
    "value": {
-    "commercial": 24.0,
-    "industrial": 8.0
+    "office": 35.09,
+    "retail": 21.62,
+    "industrial": 9.76
    },
-   "source": "Placeholder Dallas asking rents. Ask CBRE mentors for the current MarketView numbers."
+   "source": "Q3 2026 Dallas/Fort Worth average asking rents: office $35.09/sf full service (CBRE DFW Office Figures Q3 2026), retail $21.62/sf (Partners DFW Retail Q3 2026), industrial $9.76/sf net (Cushman & Wakefield DFW Industrial MarketBeat Q3 2026). The DCAD building type picks the rate. Churches, schools, government, parking and hotels get no rent."
   },
   "rent_unit_month": {
-   "value": 1350.0,
-   "source": "Placeholder Dallas average apartment rent per unit."
+   "value": 1461.0,
+   "source": "Q3 2026 DFW average effective apartment rent, $1,461 per unit (Cushman & Wakefield DFW Multifamily MarketBeat Q3 2026)."
   },
-  "disruption_months_per_case": {
-   "value": 1.0,
-   "source": "Placeholder: a code or nuisance case disrupts one month of rent while it is open."
+  "days_open": {
+   "value": {
+    "code": 6.2,
+    "nuisance": 8.5,
+    "rental": 23.4,
+    "tenant": 13.9,
+    "vacancy": 1.1,
+    "all": 6.7
+   },
+   "source": "Measured: median days from report to close for each kind of Dallas 311 property report since 2022 (filled in by build.py). Rent is exposed while a case is open."
   },
   "repair_psf": {
    "value": {

@@ -21,7 +21,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import geo, model, plan
+import os
+
+from . import dcad, geo, lists, model, plan
 
 ROOT = Path(__file__).resolve().parents[2]
 WORK = ROOT / "data" / "work"
@@ -65,6 +67,8 @@ def main() -> None:
     log("placed", len(parcels))
     w = model.world(parcels, events)
     today = events.t.max().normalize()
+    log("days open", plan.measure_days_open(events))
+    kinds_by_key = events[events.property].groupby(["key", "kind"]).size()
 
     log("evaluate")
     net_eval, base_eval, report, (Xt, yt, sn) = model.train(w, EVAL_TRAIN, EVAL_TEST)
@@ -90,7 +94,11 @@ def main() -> None:
     broadcasters = np.where(Xn.own90.to_numpy() > 0)[0]
     cand = broadcasters[np.argsort(-risk[broadcasters])][:4000]
     fb = plan.firebreak_value(w, Xn, risk, net, cand)
-    money = plan.dollars(parcels, risk, w.pxy, fb.idx.to_numpy(), fb.prevented_nearby.to_numpy())
+    def kinds_of(i):
+        k = parcels.key.iat[i]
+        return kinds_by_key.loc[k].to_dict() if k in kinds_by_key.index.get_level_values(0) else {}
+    money = plan.dollars(parcels, risk, w.pxy, fb.idx.to_numpy(), fb.prevented_nearby.to_numpy(),
+                         [kinds_of(i) for i in fb.idx.to_numpy()])
     fb = pd.concat([fb.reset_index(drop=True), money], axis=1)
     fb["score"] = fb.exposure_usd
     top = fb.sort_values("score", ascending=False).head(400)
@@ -121,7 +129,9 @@ def main() -> None:
                       "infra_250m_180d": int(row.infra250_180), "buildings_250m": int(r.neighbors_250)},
             "prevented_nearby": round(float(r.prevented_nearby), 3),
             "usd": {"neighbor_value": round(float(r.neighbor_value), -3), "spillover": round(float(r.spillover_usd), -1),
-                    "rent_at_risk": round(float(r.rent_at_risk_usd), -1), "exposure": round(float(r.exposure_usd), -1)},
+                    "rent_at_risk": round(float(r.rent_at_risk_usd), -1),
+                    "days_open": round(float(r.days_open), 1), "rent_use": plan.rent_use(row.building_type if isinstance(row.building_type, str) else "", row.asset_class),
+                    "exposure": round(float(r.exposure_usd), -1)},
             "portfolio": [[round(float(parcels.lon.iat[j]), 5), round(float(parcels.lat.iat[j]), 5)]
                           for j in by_owner[row.owner_id][:60] if j != i],
             "plan": plan.response(row, buyers),
@@ -133,6 +143,19 @@ def main() -> None:
     X_eval = model.features(w, T_eval)
     risk_eval = net_eval.predict_proba(X_eval[model.ALL])[:, 1]
     hit_eval = model.labels(w, T_eval).astype(np.uint8)
+
+    log("wholesale lists")
+    list_scores = lists.backtest(parcels, X_eval, risk_eval, hit_eval)
+    log(json.dumps(list_scores))
+    lead_lists, lead_rows = lists.build(parcels, Xn, risk, risk_base, buyers, list_scores)
+    (OUT / "lists.json").write_text(json.dumps({"as_of": today.strftime("%Y-%m-%d"), "backtest_cutoff": EVAL_TEST,
+                                                "top": lists.TOP, "lists": lead_lists}, default=str))
+    private = os.environ.get("FIREBREAK_PRIVATE_OUT")
+    if private:
+        dest = Path(private).expanduser()
+        if ROOT in dest.resolve().parents or dest.resolve() == ROOT:
+            raise SystemExit("FIREBREAK_PRIVATE_OUT must be outside the repo: it holds owner names.")
+        log("private lead export", lists.export_private(lead_rows, Path(os.environ.get("DCAD_ZIP", dcad.DEFAULT_ZIP)), dest))
     cls = parcels.asset_class.map(model.CLASS_CODE).to_numpy().astype(np.uint8)
     cols = [
         ("lon", parcels.lon.to_numpy(np.float32)), ("lat", parcels.lat.to_numpy(np.float32)),

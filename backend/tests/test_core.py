@@ -52,3 +52,18 @@ def test_homestead_owner_gets_help_first_not_an_offer():
     out = plan.response(row, pd.DataFrame())
     assert not any("cash offer" in s["do"] for s in out["steps"])
     assert "home repair" in out["steps"][0]["do"]
+
+
+def test_rent_use_follows_dcad_building_type():
+    assert plan.rent_use("OFFICE BUILDING", "commercial") == "office"
+    assert plan.rent_use("STORAGE WAREHOUSE", "commercial") == "industrial"
+    assert plan.rent_use("FREE STANDING RETAIL STORE", "commercial") == "retail"
+    assert plan.rent_use("CHURCH BUILDING", "commercial") is None
+
+
+def test_owner_occupied_homes_never_make_a_wholesale_list():
+    from firebreak import lists
+    p = _parcels([{"parcel_id": "a", "homestead": True, "absentee": True},
+                  {"parcel_id": "b", "homestead": False, "absentee": True}])
+    p["units"] = np.nan
+    assert lists.universe(p).tolist() == [False, True]

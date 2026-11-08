@@ -60,8 +60,21 @@ The 400 buildings with the most at stake, sorted by `usd.exposure`. Each one:
 | `history` | `last_90`, `last_365`, `all`, `kinds` (count by kind) |
 | `block` | `reports_50m_30d`, `reports_250m_90d`, `infra_250m_180d`, `buildings_250m` |
 | `prevented_nearby` | Expected reports prevented at neighbors if this building is stabilized now |
-| `usd` | `neighbor_value` (residential, within 200 m), `spillover`, `rent_at_risk`, `exposure` (= spillover + rent at risk) |
+| `usd` | `neighbor_value` (residential, within 200 m), `spillover`, `rent_at_risk`, `days_open` (expected days a case stays open), `rent_use` (`office`, `retail`, `industrial` or null), `exposure` (= spillover + rent at risk) |
 | `plan` | `steps` (`crew`, `do`, `cost`), `underwrite` (homes and small multifamily: `arv`, `repairs`, `buyer_price`, `offer`, `fee`, `viable`), `buyers` (`name`, `buys_2y`, `in_zip`), `cost` |
+
+## lists.json
+
+Wholesale lead lists. `as_of`, `backtest_cutoff`, `top` (leads per list) and `lists`, where each list has:
+
+| Field | Meaning |
+|---|---|
+| `id`, `title`, `pitch`, `rule` | `first_spark`, `code_stack`, `tired_landlord`, `block_fire`, with plain-English text |
+| `eligible` | Houses that fit the rule today |
+| `backtest` | The rule applied on `backtest_cutoff`: `top`, `hit_rate` (top leads with a report within 90 days), `base_rate` (all non-owner-occupied houses), `lift`, `pool_rate` (the rule's hit rate with no ranking), `rank_lift` |
+| `leads[]` | `i`, `parcel_id`, `address`, `zip`, `lat`, `lon`, `asset_class`, `value`, `sqft`, `year_built`, `risk`, `network_pts`, `reports_365`, `reports_all`, `block_90d`, `next_door_30d`, `owner` (`id`, `label`, `buildings`, `absentee`, `out_of_state`), `arv`, `repairs`, `buyer_price`, `offer`, `fee`, `viable`, `buyers_nearby`, `p_two_buyers` |
+
+No owner names or mailing addresses ever go in this file.
 
 ## Crew roles (from WHOLZR)
 

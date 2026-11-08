@@ -42,6 +42,8 @@ def load_events(path) -> pd.DataFrame:
     e["lat"], e["lon"] = ll[0], ll[1]
     e = e[e.lat.between(32.5, 33.1) & e.lon.between(-97.1, -96.5)].copy()
     e["t"] = pd.to_datetime(e.created_date, errors="coerce")
+    closed = pd.to_datetime(e.closed_date, errors="coerce") if "closed_date" in e else pd.Series(pd.NaT, index=e.index)
+    e["days_open"] = (closed - e.t).dt.total_seconds() / 86400
     e = e[e.t.notna()]
     # A construction-site complaint means the lot is being rebuilt, which is the opposite of distress.
     e = e[e.service_request_type != "Construction Site Complaint - PDD"]
@@ -50,7 +52,7 @@ def load_events(path) -> pd.DataFrame:
     e["key"] = e.street + "|" + e.zip
     e["property"] = e.service_request_type.isin(PROPERTY_TYPES)
     e["kind"] = e.service_request_type.map(KIND).fillna("infra")
-    return e[["t", "lat", "lon", "key", "property", "kind", "service_request_type"]].reset_index(drop=True)
+    return e[["t", "lat", "lon", "key", "property", "kind", "service_request_type", "days_open"]].reset_index(drop=True)
 
 
 _NUM = re.compile(r"^(\d+)\s+(.*)$")

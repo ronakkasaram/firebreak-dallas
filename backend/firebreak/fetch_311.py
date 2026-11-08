@@ -40,7 +40,8 @@ INFRA = [
     "Traffic Signal - All Out - TPW",
     "Tree Down/Low Limbs - TPW",
 ]
-FIELDS = ["service_request_number", "address", "service_request_type", "department", "created_date", "status", "lat_location"]
+FIELDS = ["service_request_number", "address", "service_request_type", "department", "created_date", "closed_date", "status",
+          "lat_location"]
 PAGE = 50000
 
 

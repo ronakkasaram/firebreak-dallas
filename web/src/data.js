@@ -15,6 +15,7 @@ export async function load(base = './data') {
     fetch(`${base}/events.bin`).then(r => r.arrayBuffer()),
     fetch(`${base}/hotspots.json`).then(r => r.json()),
   ]);
+  const lists = await fetch(`${base}/lists.json`).then(r => (r.ok ? r.json() : null)).catch(() => null);
   const b = unpack(bBuf, meta.buildings_layout);
   const e = unpack(eBuf, meta.events_layout);
   const n = meta.buildings_layout[0].length;
@@ -26,7 +27,7 @@ export async function load(base = './data') {
   const ePos = new Float32Array(m * 2);
   for (let i = 0; i < m; i++) { ePos[2 * i] = e.lon[i]; ePos[2 * i + 1] = e.lat[i]; }
 
-  return { meta, b, e, n, m, bPos, ePos, hotspots };
+  return { meta, b, e, n, m, bPos, ePos, hotspots, lists };
 }
 
 export const DAY = 86400000;

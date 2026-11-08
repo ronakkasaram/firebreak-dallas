@@ -13,6 +13,8 @@ judge or mentor can challenge one number without reading code.
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pandas as pd
 from scipy.spatial import cKDTree
@@ -28,13 +30,21 @@ ASSUMPTIONS = {
     },
     "spillover_radius_m": {"value": 200, "source": "1/8 mile, matching the study above."},
     "rent_psf_year": {
-        "value": {"commercial": 24.0, "industrial": 8.0},
-        "source": "Placeholder Dallas asking rents. Ask CBRE mentors for the current MarketView numbers.",
+        "value": {"office": 35.09, "retail": 21.62, "industrial": 9.76},
+        "source": "Q3 2026 Dallas/Fort Worth average asking rents: office $35.09/sf full service (CBRE DFW Office "
+                  "Figures Q3 2026), retail $21.62/sf (Partners DFW Retail Q3 2026), industrial $9.76/sf net "
+                  "(Cushman & Wakefield DFW Industrial MarketBeat Q3 2026). The DCAD building type picks the rate. "
+                  "Churches, schools, government, parking and hotels get no rent.",
     },
-    "rent_unit_month": {"value": 1350.0, "source": "Placeholder Dallas average apartment rent per unit."},
-    "disruption_months_per_case": {
-        "value": 1.0,
-        "source": "Placeholder: a code or nuisance case disrupts one month of rent while it is open.",
+    "rent_unit_month": {
+        "value": 1461.0,
+        "source": "Q3 2026 DFW average effective apartment rent, $1,461 per unit (Cushman & Wakefield DFW "
+                  "Multifamily MarketBeat Q3 2026).",
+    },
+    "days_open": {
+        "value": {},
+        "source": "Measured: median days from report to close for each kind of Dallas 311 property report since "
+                  "2022 (filled in by build.py). Rent is exposed while a case is open.",
     },
     "repair_psf": {
         "value": {"good": 8.0, "average": 18.0, "fair": 32.0, "poor": 55.0},
@@ -50,6 +60,41 @@ ASSUMPTIONS = {
 
 def A(name: str):
     return ASSUMPTIONS[name]["value"]
+
+
+USE = [  # DCAD building type to rent category, first match wins
+    ("office", r"OFFICE|BANK|LOFT"),
+    ("industrial", r"WAREHOUSE|INDUSTRIAL|DISTRIBUTION|HANGAR|TECHNICAL|MANUFACTUR|FLEX"),
+    ("retail", r"RETAIL|STORE|RESTAURANT|SHOPPING|LOUNGE|MARKET|MART|AUTOMOTIVE|CONVERTED|NURSERY|VETERINARY|"
+               r"CAR WASH|SERVICE STATION|SHOWROOM|FAST FOOD"),
+]
+
+
+def rent_use(building_type: str, asset_class: str) -> str | None:
+    """Rent category for a commercial building, or None when it earns no market rent."""
+    bt = (building_type or "").upper()
+    for use, pat in USE:
+        if re.search(pat, bt):
+            return use
+    return "industrial" if asset_class == "industrial" else None
+
+
+def measure_days_open(events: pd.DataFrame) -> dict:
+    """Median days a property report stays open, by kind. Stored in ASSUMPTIONS['days_open']."""
+    e = events[events.property & events.days_open.between(0, 730)]
+    out = {k: round(float(v), 1) for k, v in e.groupby("kind").days_open.median().items()}
+    out["all"] = round(float(e.days_open.median()), 1)
+    ASSUMPTIONS["days_open"]["value"] = out
+    return out
+
+
+def expected_days_open(kinds: dict) -> float:
+    """Days a new case would stay open at a building, weighted by the kinds of reports it already gets."""
+    d = A("days_open")
+    total = sum(kinds.values())
+    if not total:
+        return d.get("code", d.get("all", 30.0))
+    return sum(d.get(k, d.get("all", 30.0)) * n for k, n in kinds.items()) / total
 
 
 def firebreak_value(w: model.World, X: pd.DataFrame, risk: np.ndarray, net, candidates: np.ndarray) -> pd.DataFrame:
@@ -84,8 +129,9 @@ def firebreak_value(w: model.World, X: pd.DataFrame, risk: np.ndarray, net, cand
                          "neighbors_250": out["size"].to_numpy()})
 
 
-def dollars(p: pd.DataFrame, risk: np.ndarray, pxy: np.ndarray, idx: np.ndarray, prevented: np.ndarray) -> pd.DataFrame:
-    """Expected cost of letting each building fail: spillover on neighbors plus lost rent."""
+def dollars(p: pd.DataFrame, risk: np.ndarray, pxy: np.ndarray, idx: np.ndarray, prevented: np.ndarray,
+            kinds: list[dict] | None = None) -> pd.DataFrame:
+    """Expected cost of letting each building fail: value lost next door plus rent exposed while a case is open."""
     resid = np.where(p.asset_class.isin(["home", "multifamily"]).to_numpy())[0]
     tree = cKDTree(pxy[resid])
     vals = p.value.to_numpy()[resid]
@@ -98,15 +144,18 @@ def dollars(p: pd.DataFrame, risk: np.ndarray, pxy: np.ndarray, idx: np.ndarray,
     lease = p.lease_sf.fillna(0).to_numpy()[idx]
     sqft = p.sqft.fillna(0).to_numpy()[idx]
     units = p.units.fillna(0).to_numpy()[idx]
-    month = A("disruption_months_per_case")
+    days = np.array([expected_days_open(k) for k in kinds]) if kinds is not None else np.full(len(idx), A("days_open")["all"])
+    use = [rent_use(bt, c) for bt, c in zip(p.building_type.fillna("").to_numpy()[idx], cls)]
     rent = np.zeros(len(idx))
-    for c, psf in A("rent_psf_year").items():
-        m = cls == c
-        rent[m] = np.where(lease[m] > 0, lease[m], sqft[m]) * psf / 12 * month * risk[idx][m]
-    m = cls == "multifamily"
-    rent[m] = np.maximum(units[m], 2) * A("rent_unit_month") * month * risk[idx][m]
+    rates = A("rent_psf_year")
+    for k, u in enumerate(use):
+        if cls[k] in ("commercial", "industrial") and u:
+            area = lease[k] if lease[k] > 0 else sqft[k]
+            rent[k] = area * rates[u] / 365 * days[k] * risk[idx][k]
+        elif cls[k] == "multifamily":
+            rent[k] = max(units[k], 2) * A("rent_unit_month") * 12 / 365 * days[k] * risk[idx][k]
     return pd.DataFrame({"neighbor_value": nb_value, "spillover_usd": spill, "rent_at_risk_usd": rent,
-                         "exposure_usd": spill + rent})
+                         "days_open": days, "exposure_usd": spill + rent})
 
 
 def underwrite(row: pd.Series) -> dict:
