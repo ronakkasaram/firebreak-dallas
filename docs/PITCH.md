@@ -29,6 +29,9 @@ the hidden same-owner network, the 90-day forecast, the backtest replay, one bui
 council district brief and the Evidence tab. Every caption is read from the data files. Talk over it, pause
 it (the pause button), step with ‹ ›, or press Esc to take over. If a judge arrives mid-explanation, press T.
 
+Press `F` for **film mode**: the same tour full screen, with title and end cards. Use it for the video
+submission (see docs/PROMO.md) or as a looping display at the table.
+
 `⌘K` (or `/`) opens search and commands: type "brief", "backtest", "export", a street name or a company.
 
 ## The 30-second version
@@ -43,8 +46,13 @@ it (the pause button), step with ‹ ›, or press Esc to take over. If a judge 
 
 ## The 2-minute walkthrough (the demo path)
 
-Press the number keys; they switch views.
+Press the number keys; they switch views. Open on the product site (`index.html`) if the judge has a
+minute for the story, or go straight to `app.html`.
 
+0. **Home (key 0).** "This is what a code-compliance team opens every morning: the strongest clusters this
+   week, what to do next, and the cases already in motion." Click **Resolve** on the top cluster and let
+   the playbook run; hold Approve; press 0 again and point at the new case in the inbox. "From alarm to an
+   approved, costed, routed case in about ten seconds, and a person still signs."
 1. **Detect (key 1).** "This is every property report in Dallas, the last 60 days." Press space to play
    a year. "The squares are emerging clusters: places reporting faster than their own history. Cluster 1
    has 37 houses with a new case where we expected under one." Point at the live dot in the top bar:

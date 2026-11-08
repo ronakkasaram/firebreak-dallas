@@ -91,7 +91,17 @@ With no house picked, arcs link each report since mid-2026 to the earlier report
 
 ## The demo
 
-The console follows one workflow, keys 1 to 5. The presenter guide, with scripts, numbers and hard questions, is in [docs/PITCH.md](docs/PITCH.md).
+The build has two pages:
+- `index.html` is the product site: the problem, how it works, who it is for, the proof table (wins and misses), the platform contract, a promo storyboard, illustrative pricing and an FAQ. Every number on it is read from `web/public/data/`, and a street lookup hands off to the console.
+- `app.html` is the console. Old links such as `#detect` on the site redirect to it.
+
+The console opens on **Home** (key `0`), then follows one workflow, keys 1 to 5. The presenter guide, with scripts, numbers and hard questions, is in [docs/PITCH.md](docs/PITCH.md). The promo kit is in [docs/PROMO.md](docs/PROMO.md).
+
+0. **Home.** The screen a team opens each morning.
+   - **Workspaces:** compliance, owners and managers, or acquisitions. Each one gets its own next moves.
+   - **Today:** the strongest clusters, each with **Resolve**.
+   - **Cases inbox:** every approved playbook becomes a case. It moves from Approved to Crew dispatched to Resolved, with a timestamped log, a route and a CSV export. It is kept in the browser.
+   - **Data health:** the age and size of every source and model.
 
 1. **Detect.** Every Dallas property report, played back over two years. Emerging clusters from an expectation-based subset scan, the live 311 feed since the snapshot, and the spread rate R by month and council district.
    - **Hidden network** (`N`): arcs from each building with a report this year to the same company's other buildings, the 1.20× same-owner link drawn on the map.
@@ -112,7 +122,7 @@ The console follows one workflow, keys 1 to 5. The presenter guide, with scripts
    - **Acquisition leads:** for repair-and-resell buyers, with natural buyers next door and a drive-for-dollars loop. Each lead has a **deal desk** that runs the WHOLZR engine's underwriting: an offer waterfall, seller-side odds by discount band, a motivation index, expected fee per contact, and a buyer teaser with no address. Leads can be ranked by expected fee.
 5. **Evidence.** The model card: data joins, held-out results, the Hawkes fit and residuals, fairness by council district, the closure natural experiment with its placebos, and limits.
 
-Press `T` for a guided tour that drives the console by itself. Search and commands (`⌘K` or `/`) find streets, 100-blocks, building names and company portfolios, and jump to any view or action. **Act** also writes a one-page brief for each council district. Every view has a shareable link (`#detect`, `#simulate-b83148`).
+Press `T` for a guided tour that drives the console by itself, or `F` for **film mode**: the same tour full screen between a title card and an end card, for recording a promo. Search and commands (`⌘K` or `/`) find streets, 100-blocks, building names and company portfolios, and jump to any view or action. **Act** also writes a one-page brief for each council district. Every view has a shareable link (`app.html#detect`, `app.html#simulate-b83148`, `app.html#film`).
 
 ## FALCON on Dallas (the neural model)
 

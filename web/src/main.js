@@ -9,12 +9,15 @@ import { DataFilterExtension } from '@deck.gl/extensions';
 import { load, dayToDate, dateToDay } from './data.js';
 import {
   $, esc, pct, kusd, usd, wireHold, fmtDate, CLASS, factorOf, factorWord, KIND_HEX, HEAT, LIST_HEX, DEFAULT_COSTS, store,
-  renderIntro, renderDetect, renderPredict, renderSimulateIdle, renderHouse, renderAct, renderEvidence, renderDossier, renderLead, renderLegend,
+  renderDetect, renderPredict, renderSimulateIdle, renderHouse, renderAct, renderEvidence, renderDossier, renderLead, renderLegend,
 } from './panels.js';
 import { pullLive, replayLive } from './live.js';
 import { chain, childrenOf, latestReport, clusterOrigins, KIND_OF } from './rootcause.js';
 import { startTour, stopTour, tourActive } from './tour.js';
 import { startPlaybook, stopPlaybook, playbookActive } from './playbook.js';
+import { renderHome, healthRows, ROLES } from './home.js';
+import { listCases, getCase, openCase, advanceCase, removeCase, casesCSV } from './cases.js';
+import { startFilm, stopFilm, filmActive } from './film.js';
 import './style.css';
 
 const STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
@@ -27,7 +30,8 @@ async function pickStyle() {
   } catch { return BARE; }
 }
 const HOME = { center: [-96.79, 32.80], zoom: 10.6, pitch: 45, bearing: -12 };
-const VIEWS = ['detect', 'predict', 'simulate', 'act', 'evidence'];
+const VIEWS = ['home', 'detect', 'predict', 'simulate', 'act', 'evidence'];
+const onDetect = v => v === 'detect' || v === 'home'; // Home shows the Detect map: what is happening now
 const RUNS = 400, SEED = 20261107;
 const M_LON = 111320 * Math.cos(32.78 * Math.PI / 180), M_LAT = 111320;
 
@@ -44,14 +48,13 @@ function heat(t, a = 255) { // 0..1 on the inferno ramp
 }
 
 const S = {
-  view: 'detect', day: 730, playing: false, speed: 3,
+  view: 'home', day: 730, role: store('fb-role') || 'city', caseTab: 'open', caseOpen: null, playing: false, speed: 3,
   filter: 'all', predict: 'forecast', act: 'plan', list: 'first_spark',
   selected: null, lead: null, alarm: null, house: null, highlight: null,
   plan: { budget: 500000, costs: { ...DEFAULT_COSTS, ...(store('fb-costs') || {}) }, result: null },
   planApproved: !!store('fb-plan-approved'), portfolio: { owner: null, rows: null, inbound: 0 },
   live: { status: 'off', note: 'connecting', count: 0, jumps: [] }, brief: null, route: null, network: false,
 };
-let introClose = null;
 let D, map, overlay, todayDay, cutoffDay, backtestTop, hitDay, sim, simReady = false, liveEv = null;
 
 // ---------- helpers ----------
@@ -121,7 +124,7 @@ function layers() {
     updateTriggers: { getFillColor: dim },
   }));
 
-  if (v === 'detect') {
+  if (onDetect(v)) {
     // Report density, last 60 days: events.bin is sorted by day, so the window is one contiguous slice.
     const lo = lowerDay(S.day - 60), hi = lowerDay(S.day + 1);
     out.push(new HeatmapLayer({
@@ -290,7 +293,7 @@ function layers() {
     }));
   }
 
-  if (liveEv && (v === 'detect' || v === 'simulate')) {
+  if (liveEv && (onDetect(v) || v === 'simulate')) {
     out.push(new ScatterplotLayer({
       id: 'live', data: liveEv, getPosition: d => [d.lon, d.lat], getRadius: 60, radiusMinPixels: 4, radiusMaxPixels: 10,
       getFillColor: d => [...KIND_RGB[d.kind], 255], stroked: true, getLineColor: [255, 255, 255, 255], lineWidthMinPixels: 1.5,
@@ -389,7 +392,7 @@ function houseLayers() {
 
 function range() {
   const v = S.view;
-  if (v === 'detect') return [0, todayDay];
+  if (onDetect(v)) return [0, todayDay];
   if (v === 'predict' && S.predict === 'proof') return [cutoffDay, cutoffDay + 90];
   if (v === 'predict' || v === 'simulate') return [todayDay, todayDay + D.meta.horizon_days];
   return null;
@@ -412,7 +415,7 @@ function histValues() {
   const rg = range(); if (!rg) return null;
   const [lo, hi] = rg, span = hi - lo;
   const bins = Math.min(104, span), w = span / bins, vals = new Float32Array(bins);
-  if (S.view === 'detect') {
+  if (onDetect(S.view)) {
     for (let j = 0; j < D.m; j++) { const d = D.e.day[j]; if (D.e.kind[j] === 6 || d < lo || d >= hi) continue; vals[Math.floor((d - lo) / w)]++; }
   } else if (S.view === 'predict' && S.predict === 'proof') {
     for (let r = 0; r < hitDay.length; r++) { const d = hitDay[r]; if (d >= lo && d < hi) vals[Math.floor((d - lo) / w)]++; }
@@ -434,7 +437,7 @@ function drawHist() {
 
 function caption() {
   const v = S.view, { meta } = D;
-  if (v === 'detect') return S.day >= todayDay - 1
+  if (onDetect(v)) return S.day >= todayDay - 1
     ? `Each dot is a 311 report about a building in the 60 days to this date, coloured by type. Squares: emerging clusters today.`
     : `Replaying reports. Each dot fades out after 60 days.`;
   if (v === 'predict' && S.predict === 'proof') {
@@ -474,7 +477,7 @@ function tick(t) {
   if (t - lastT > 60) {
     lastT = t;
     const hi = +$('slider').max;
-    S.day += S.view === 'detect' ? S.speed : Math.max(1, Math.round(S.speed / 3));
+    S.day += onDetect(S.view) ? S.speed : Math.max(1, Math.round(S.speed / 3));
     if (S.day >= hi) { S.day = hi; setPlaying(false); }
     redraw();
   }
@@ -489,8 +492,93 @@ function setPlaying(on) {
 
 // ---------- views ----------
 
+// ---------- home ----------
+
+// Where each alarm is, in words: the building nearest the cluster's centre (homes shown at the block).
+const alarmWhere = new Map();
+function whereOf(k) {
+  if (alarmWhere.has(k)) return alarmWhere.get(k);
+  const c = D.alarms.clusters[k], gs = clusterBuildings(c);
+  const lon = c.cells.reduce((a, p) => a + p[0], 0) / c.cells.length, lat = c.cells.reduce((a, p) => a + p[1], 0) / c.cells.length;
+  let best = -1, bd = Infinity;
+  for (const g of gs) { const d = Math.hypot((D.b.lon[g] - lon) * M_LON, (D.b.lat[g] - lat) * M_LAT); if (d < bd) { bd = d; best = g; } }
+  const w = best >= 0 ? label(best) : `${lat.toFixed(3)}, ${lon.toFixed(3)}`;
+  alarmWhere.set(k, w);
+  return w;
+}
+
+function roleMoves(role) {
+  const go = (fn, view) => () => { fn(); setView(view); render(); };
+  const f = D.meta.audit?.fairness?.districts?.find(x => x.district === worstDistrict());
+  const cert = D.evidence?.live?.certified;
+  if (role === 'owner') {
+    const o = bestOwner(), name = D.search?.owners?.[o - 1]?.label || 'the most exposed portfolio';
+    const hot = D.hotspots[0], W = watched().length;
+    return [
+      { title: `See what the neighbours cost ${name}`, why: 'the share of its 90-day risk that comes from buildings it does not own, and which ones to fix first', run: go(() => { S.act = 'portfolio'; setOwner(o); }, 'act') },
+      { title: 'Stress-test one building', why: `400 futures for ${esc(label(hot.i))} and its neighbours, then the three repairs that spare the most`, run: () => openHouse(hot.i) },
+      { title: W ? `Check ${W} followed ${W === 1 ? 'building' : 'buildings'}` : 'Follow the buildings you manage', why: 'ringed on the map; new 311 reports at or near them are flagged here first', run: () => ACTIONS.find(a => a.label === 'Detect: my watchlist').run() },
+    ];
+  }
+  if (role === 'buyer') {
+    const L = D.lists?.lists || [], n = new Set(L.flatMap(l => l.leads.map(x => x.parcel_id))).size;
+    return [
+      { title: 'Leads ranked by expected fee per contact', why: `${n.toLocaleString()} distressed, non-owner-occupied leads, scored with the WHOLZR deal desk`, run: go(() => { S.act = 'investor'; S.leadSort = 'efc'; }, 'act') },
+      { title: 'Plan a drive-for-dollars loop', why: 'the densest ZIP of the current list, ordered nearest-neighbour plus 2-opt', run: () => { S.act = 'investor'; setView('act'); handlers.d4d(); } },
+      ...(D.falcon ? [{ title: 'Quiet blocks the neural field expects to report', why: 'blind spots: built-up cells silent for 12 weeks that the network expects to light up', run: go(() => { S.predict = 'neural'; }, 'predict') }] : []),
+    ];
+  }
+  return [
+    { title: `Tomorrow's route for council district ${worstDistrict()}`, why: f ? `${f.cases.toLocaleString()} cases last quarter and under-served by a raw ranking; the brief re-ranks it fairly` : 'one-page brief and an inspection route', run: go(() => { S.act = 'brief'; setBrief(worstDistrict()); }, 'act') },
+    ...(cert ? [{ title: `Certified list: ${cert.toLocaleString()} buildings`, why: 'at most 10% expected wrong (conformal selection); it held at 7.1% on the last held-out quarter', run: go(() => { S.predict = 'certified'; }, 'predict') }] : []),
+    { title: `Spend ${kusd(S.plan.budget)} where it prevents the most`, why: 'interventions ranked by reports prevented per dollar, exported as work orders', run: go(() => { S.act = 'plan'; computePlan(); }, 'act') },
+  ];
+}
+
+function homeModel() {
+  const W = watchRows();
+  const alarms = (D.alarms?.clusters || []).map((c, k) => ({ k, where: whereOf(k), observed: c.observed, expected: c.expected, window: c.window_days, buildings: c.buildings }));
+  return {
+    alarms, cases: listCases(), moves: roleMoves(S.role), live: S.live, health: healthRows(D, S.live),
+    watchHits: W.filter(w => w.liveN || w.live > 0.001).length,
+  };
+}
+
+function download(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ---------- film mode: the tour, full screen, with title and end cards, for recording a promo ----------
+
+function film() {
+  if (filmActive()) return;
+  stopPlaybook(); stopTour();
+  const m = D.meta;
+  startFilm({
+    open: { kicker: 'Firebreak', title: 'Property distress spreads like fire.', sub: `${m.counts.buildings.toLocaleString()} Dallas buildings. ${m.counts.reports.toLocaleString()} city reports. One question: where does it go next?` },
+    close: { kicker: 'Firebreak', title: 'Predict it. Trace it. Stop it.', sub: 'Built on public data, tested on a quarter the model never saw. HackUTD 2026 · CBRE' },
+    run: onEnd => runTour(onEnd),
+    stop: () => stopTour(),
+  });
+}
+
 const handlers = {
   alarm: k => pickAlarm(k),
+  role: r => { S.role = r; store('fb-role', r); render(); },
+  homeAlarm: k => { if (S.alarm !== k) pickAlarm(k); else render(); },
+  caseTab: t => { S.caseTab = t; render(); },
+  caseOpen: id => { S.caseOpen = S.caseOpen === id ? null : id; render(); },
+  caseAdvance: (id, note) => { advanceCase(id, note); render(); },
+  caseRemove: id => { removeCase(id); if (S.caseOpen === id) S.caseOpen = null; render(); },
+  caseMap: id => {
+    const c = getCase(id); if (!c?.stopsIdx) return;
+    setRoute('case', c.stopsIdx); S.highlight = c.stopsIdx; redraw();
+  },
+  casesCsv: () => download(`firebreak-cases-${D.meta.as_of}.csv`, casesCSV(), 'text/csv'),
+  film: () => film(),
   house: i => openHouse(i),
   crews: () => { if (S.crews) { S.crews = null; render(); redraw(); } else dispatchCrews(); },
   falconCell: k => { const [lon, lat] = D.falcon.center(k); fly(lon, lat, 15.2); },
@@ -528,6 +616,7 @@ const handlers = {
 function render() {
   const v = S.view;
   document.querySelectorAll('#views button').forEach(x => x.classList.toggle('on', x.dataset.view === v));
+  if (v === 'home') renderHome(D, S, handlers, homeModel());
   if (v === 'detect') { S.watch = watchRows(); renderDetect(D, S, handlers); }
   if (v === 'predict') renderPredict(D, S, handlers);
   if (v === 'simulate') S.house ? renderHouse(D, S.house, houseActions()) : renderSimulateIdle(D);
@@ -544,13 +633,13 @@ function render() {
 }
 
 function setView(v, opts = {}) {
-  if (!VIEWS.includes(v)) v = 'detect';
+  if (!VIEWS.includes(v)) v = 'home';
   const changed = v !== S.view;
   S.view = v; setPlaying(false);
   if (changed) {
     S.selected = null; S.lead = null; S.alarm = null;
     $('detail').hidden = true;
-    if (v === 'detect') S.day = todayDay;
+    if (onDetect(v)) S.day = todayDay;
     if (v === 'predict') S.day = S.predict === 'proof' ? cutoffDay : todayDay + 45;
     if (v === 'simulate') S.day = todayDay + 90;
     if (v !== 'simulate' && map.getZoom() > 12.5) home();
@@ -571,8 +660,9 @@ function setHash() {
 function readHash() {
   const h = location.hash.slice(1);
   if (h === ownHash) return;
-  const m = h.match(/^(detect|predict|simulate|act|evidence)(?:-b(\d+))?$/);
-  if (!m) return setView('detect', { keepHash: true });
+  if (h === 'film') { setView('home', { keepHash: true }); film(); return; }
+  const m = h.match(/^(home|detect|predict|simulate|act|evidence)(?:-b(\d+))?$/);
+  if (!m) return setView('home', { keepHash: true });
   if (m[2] && +m[2] < D.n) { openHouse(+m[2], { keepHash: true }); return; }
   setView(m[1], { keepHash: true });
 }
@@ -1047,7 +1137,7 @@ function runPlaybook(k) {
     onClose: () => { S.highlight = null; if (S.route?.kind === 'case') S.route = null; redraw(); },
     onDone: x => {
       const text = caseText(id, c, x);
-      const signed = (store('fb-cases') || {})[id];
+      const prev = getCase(id), signed = prev ? prev.opened : null;
       return {
         html: `<div class="pb-case"><div class="pb-id">${id}</div>
           <div class="pb-kpis"><div><b>${x.actions.length}</b><small>work orders</small></div><div><b>${kusd(x.cost)}</b><small>cost</small></div>
@@ -1058,8 +1148,10 @@ function runPlaybook(k) {
         wire: el => {
           el.querySelector('[data-a=copy-case]').onclick = async ev => { try { await navigator.clipboard.writeText(text); ev.target.textContent = 'Copied'; } catch { ev.target.textContent = 'Copy blocked'; } };
           wireHold(el.querySelector('#pb-hold'), () => {
-            const all = store('fb-cases') || {}; all[id] = new Date().toISOString(); store('fb-cases', all);
-            const h = el.querySelector('#pb-hold'); h.classList.add('signed'); h.querySelector('span:last-child').textContent = 'Approved ' + all[id].slice(0, 10);
+            const c2 = openCase({ id, title: `Cluster around ${whereOf(k)}`, origin: label(x.origin), workOrders: x.actions.length, cost: x.cost,
+              prevented: x.prevented, km: x.route.km, stops: x.route.order.length, stopsIdx: x.route.order.slice(), link: x.route.link, text });
+            const h = el.querySelector('#pb-hold'); h.classList.add('signed'); h.querySelector('span:last-child').textContent = 'Approved ' + c2.opened.slice(0, 10);
+            const n = el.querySelector('.pb-case .note'); if (n) n.innerHTML = 'Case opened. Track it under <b>Home &gt; Cases</b> (press 0). Nothing is sent: the inbox is kept in this browser.';
           });
         },
       };
@@ -1140,8 +1232,7 @@ function setBrief(d) {
 
 // ---------- guided tour ----------
 
-function runTour() {
-  if (introClose) { introClose(); introClose = null; }
+function runTour(onEnd) {
   stopPlaybook();
   const m = D.meta, net = m.model.network, num = v => Math.round(v).toLocaleString();
   const top = D.alarms?.clusters?.[0], hot = D.hotspots[0];
@@ -1180,7 +1271,7 @@ function runTour() {
       text: () => `Held-out tests, residual checks, a fairness audit by district, and a natural experiment that came back negative, shown rather than hidden. Press T to replay, or explore.` },
   ];
   $('tour-btn')?.classList.add('on');
-  startTour(steps, () => { $('tour-btn')?.classList.remove('on'); setPlaying(false); });
+  startTour(steps, () => { $('tour-btn')?.classList.remove('on'); setPlaying(false); onEnd?.(); });
 }
 // The tour's portfolio: the company with 8+ buildings whose risk depends most on neighbours.
 function bestOwner() {
@@ -1200,6 +1291,7 @@ function worstDistrict() {
 
 let streetIdx = null;
 const ACTIONS = [
+  { label: 'Home: today, next moves and cases', key: '0', run: () => setView('home') },
   { label: 'Detect: what is happening now', key: '1', run: () => setView('detect') },
   { label: 'Predict: the next 90 days', key: '2', run: () => setView('predict') },
   { label: 'Simulate: house by house', key: '3', run: () => setView('simulate') },
@@ -1212,6 +1304,8 @@ const ACTIONS = [
   { label: 'Detect: my watchlist', run: () => { setView('detect'); requestAnimationFrame(() => [...document.querySelectorAll('#panel .pane')].find(p => p.innerText.startsWith('Watchlist'))?.scrollIntoView({ behavior: 'smooth' })); } },
   { label: 'Run the resolution playbook on the strongest cluster', key: 'R', run: () => runPlaybook(S.alarm ?? 0) },
   { label: 'Start the guided tour', key: 'T', run: () => runTour() },
+  { label: 'Film mode: full-screen tour for recording a promo', key: 'F', run: () => film() },
+  { label: 'Export cases (CSV)', run: () => handlers.casesCsv() },
   { label: 'Play or pause time', key: 'Space', run: () => range() && $('play').click() },
   { label: 'Toggle 2D / 3D', key: 'P', run: () => togglePitch() },
   { label: 'Export work orders (CSV)', run: () => { S.act = 'plan'; setView('act'); exportPlan(); } },
@@ -1292,6 +1386,7 @@ function setLive(L) {
     if (sim) sim.postMessage({ type: 'add', ev: L.events.filter(x => x.b >= 0 && x.kind !== 6) });
   }
   if (S.view === 'detect') { S.watch = watchRows(); renderDetect(D, S, handlers); }
+  if (S.view === 'home') render();
   redraw();
 }
 
@@ -1396,7 +1491,7 @@ async function main() {
   $('speed').addEventListener('change', ev => { S.speed = +ev.target.value; });
   $('play').addEventListener('click', () => {
     const sl = $('slider');
-    if (!S.playing && S.day >= +sl.max) S.day = S.view === 'detect' ? Math.max(0, todayDay - 365) : +sl.min;
+    if (!S.playing && S.day >= +sl.max) S.day = onDetect(S.view) ? Math.max(0, todayDay - 365) : +sl.min;
     setPlaying(!S.playing);
   });
   $('pitch').addEventListener('click', togglePitch);
@@ -1412,13 +1507,15 @@ async function main() {
     if ((ev.key === '/' && !typing) || (ev.key === 'k' && (ev.metaKey || ev.ctrlKey))) { ev.preventDefault(); $('q').focus(); return; }
     if (typing) return;
     if (ev.key === ' ') { ev.preventDefault(); if (range()) $('play').click(); }
-    if (ev.key >= '1' && ev.key <= '5') setView(VIEWS[+ev.key - 1]);
+    if (ev.key >= '0' && ev.key <= '5') setView(VIEWS[+ev.key]);
+    if (ev.key === 'f' || ev.key === 'F') film();
     if (ev.key === 'p' || ev.key === 'P') togglePitch();
     if (ev.key === 'n' || ev.key === 'N') { if (S.view !== 'detect') setView('detect'); handlers.network(); }
     if (ev.key === 't' || ev.key === 'T') runTour();
     if (ev.key === 'r' || ev.key === 'R') runPlaybook(S.alarm ?? 0);
     if (ev.key === 'h' || ev.key === 'H') home();
     if (ev.key === 'Escape') {
+      if (filmActive()) { stopFilm(); return; }
       if (tourActive()) { stopTour(); return; }
       if (playbookActive()) { stopPlaybook(); return; }
       if (!$('detail').hidden) { $('detail').hidden = true; S.selected = null; S.lead = null; redraw(); }
@@ -1430,11 +1527,11 @@ async function main() {
   if (import.meta.env.DEV) window.__fb = { S, D, openHouse, setView, map: () => map }; // console hooks for local testing only
 
   $('loading').remove();
+  // A hand-off from the product site: an address typed there opens here as a search.
+  let handoff = null; try { handoff = sessionStorage.getItem('fb-q'); sessionStorage.removeItem('fb-q'); } catch { /* storage blocked */ }
   if (location.hash.length > 1) readHash();
-  else {
-    setView('detect', { keepHash: true });
-    introClose = renderIntro(D, () => runTour(), () => {});
-  }
+  else setView('home', { keepHash: true });
+  if (handoff) { const r = search(handoff).find(x => x.kind !== 'action'); if (r) choose(r); else { $('q').value = handoff; $('q').focus(); $('q').dispatchEvent(new Event('input')); } }
 
   // Live 311: reports filed since the snapshot. Falls back to replaying the snapshot's last 48 hours.
   pullLive(D, todayDay).then(L => setLive(L)).catch(err => setLive(replayLive(D, todayDay, err.message)));

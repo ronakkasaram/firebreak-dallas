@@ -276,6 +276,7 @@ function crewTable(cs) {
 function neuralPane(D, S) {
   const F = D.falcon, bt = F.backtest, c1 = bt.capture_top_1pct, c5 = bt.capture_top_5pct, ig = bt.ignition;
   const p1 = ig.precision_top_100, p5 = ig.precision_top_500;
+  const cs = bt.crew_search;
   const name = { falcon: 'FALCON neural field', boosted_sum: 'Boosted model, summed per cell', last_365_days: 'Last year\'s reports', last_90_days: 'Last 90 days', buildings: 'Building count' };
   const row = k => `<tr class="${k === 'falcon' ? 'hl' : ''}"><td>${name[k]}</td><td class="r">${c1[k] !== undefined ? pct(c1[k], 1) : '—'}</td><td class="r">${c5[k] !== undefined ? pct(c5[k], 1) : '—'}</td><td class="r">${p1[k] !== undefined ? pct(p1[k]) : '—'}</td></tr>`;
   const best1 = Object.entries(c1).sort((x, y) => y[1] - x[1])[0][0], bestIg = Object.entries(p1).sort((x, y) => y[1] - x[1])[0][0];
@@ -290,6 +291,7 @@ function neuralPane(D, S) {
         ${kpi(num(F.expected_reports_90d), 'reports expected, next 90 days', 'sum of the field, today')}
         ${kpi(pct(c1.falcon, 1), 'of next-quarter reports in its top 1% of cells', `held-out ${F.cutoff}`)}
         ${kpi(pct(p1.falcon), 'of its top 100 ignitions came true', `base rate ${pct(ig.base_rate)}`)}
+        ${cs?.last_365_days ? kpi(`${(Math.max(cs.falcon.ignitions_found, cs.boosted_quiet_cells?.ignitions_found ?? 0) / cs.last_365_days.ignitions_found).toFixed(1)}×`, 'new ignitions found when crews search quiet cells', "against patrolling last year's hotspots") : ''}
       </div>
       <div class="legend-inline"><span><i class="sq heatsq"></i>expected reports</span><span><i class="ring blue"></i>likely ignition</span><span><i class="ring white"></i>blind spot</span></div>
     </div>
@@ -916,32 +918,7 @@ export function renderLegend(view, S, D) {
           ? `<h4>Portfolio buildings</h4><div class="row"><i class="sw dot" style="background:#fca50a"></i>outside building pushing on it</div>${ramp}<div class="breaks"><span>own risk</span><span>share from neighbours</span><span>outside risk</span></div><div class="row" style="margin-top:4px">size: 90-day risk</div>`
           : `<h4>Acquisition leads</h4><div class="row"><i class="sw dot" style="background:#e69f00"></i>lead on the selected list</div>${S.route ? '<div class="row"><i class="sw" style="background:#8ab4ff;height:3px"></i>drive-for-dollars loop</div>' : ''}`,
     evidence: `<h4>Recall by council district</h4>${ramp}<div class="breaks"><span>under-served</span><span>city</span><span>over-served</span></div>`,
-  }[view];
+  }[view === 'home' ? 'detect' : view];
   $('legend').innerHTML = html + src;
 }
 
-// ---------- first screen ----------
-
-export function renderIntro(D, onTour, onExplore) {
-  const m = D.meta, net = m.model.network, lt = m.audit?.lead_time?.rankings?.network;
-  const el = document.createElement('div');
-  el.id = 'intro';
-  el.innerHTML = `<div class="intro-card">
-    <div class="intro-mark"><svg width="22" height="22" viewBox="0 0 18 18" aria-hidden="true"><rect x="1" y="1" width="6" height="16" rx="1" fill="#dd513a"/><rect x="11" y="1" width="6" height="16" rx="1" fill="#33363d"/></svg>Firebreak</div>
-    <h1>Property distress spreads like fire.<br>See where it goes next, and where to stop it.</h1>
-    <p>A forecast, simulator and work planner for every building in Dallas, built from public records that share no IDs:
-      the ${m.counts.buildings.toLocaleString()}-building appraisal roll and ${m.counts.reports.toLocaleString()} city 311 reports.</p>
-    <div class="intro-stats">
-      <div><b>${pct(net.watch_precision)}</b><span>of the top ${net.watch_list.toLocaleString()} flagged buildings got a report within 90 days, on data the model never saw (base rate ${pct(net.base_rate, 1)})</span></div>
-      <div><b>${m.edges.block.ratio.toFixed(2)}×</b><span>higher odds when the house next door had a report; ${m.edges.owner.ratio.toFixed(2)}× when another building with the same owner did</span></div>
-      ${lt ? `<div><b>${lt.median_days_ahead} days</b><span>median warning before the first call, for ${lt.cases_reached_early.toLocaleString()} cases a 50-visit-a-day crew would reach first</span></div>` : ''}
-    </div>
-    <div class="intro-go"><button class="btn primary" id="intro-tour">Take the 80-second tour <kbd>T</kbd></button><button class="btn" id="intro-explore">Explore the map</button></div>
-    <div class="intro-foot">Dallas 311 · DCAD 2026 certified roll · data through ${fmtDate(new Date(m.as_of))} · HackUTD 2026, CBRE: Predict Before It Spreads</div>
-  </div>`;
-  document.getElementById('stage').appendChild(el);
-  const close = () => el.remove();
-  el.querySelector('#intro-tour').onclick = () => { close(); onTour(); };
-  el.querySelector('#intro-explore').onclick = () => { close(); onExplore(); };
-  return close;
-}

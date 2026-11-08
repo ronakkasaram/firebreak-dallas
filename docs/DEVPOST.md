@@ -25,6 +25,13 @@ Firebreak is a console that goes from detecting a problem to acting on it, in fi
 4. **Act:** give it a budget and it ranks interventions by reports prevented per dollar, exports work orders, and waits for a human to approve. A portfolio view shows owners how much of their risk comes from neighbours they don't control.
 5. **Evidence:** a model card with every test, including the ones that failed.
 
+It is packaged as a product, not a notebook:
+
+- **A product site** that leads with the problem, then shows how it works with real screenshots. It has a street lookup into the console, a proof table that lists the misses next to the wins, the data contract as endpoints, illustrative pricing and an FAQ. Every number is read live from the pipeline's files.
+- **A Home screen for each team** (code compliance, owners and managers, acquisitions), with today's clusters, role-specific next moves and a data-health table.
+- **A cases inbox:** each approved playbook becomes a case that moves from Approved to Crew dispatched to Resolved, with a timestamped log, a route and a CSV export.
+- **Film mode** (press F) records the promo from the live product: the guided tour, full screen, between title and end cards.
+
 Built for the people who act on it:
 
 - **Every building gets a Distress Factor** from 1 to 10, like a flood factor, plus a two-year timeline of its reports.

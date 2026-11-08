@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Firebreak Console</title>
+  <meta name="description" content="Firebreak console: forecast, trace and stop the spread of property distress, building by building." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <a class="brand" href="./" title="Firebreak product site">
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><rect x="1" y="1" width="6" height="16" rx="1" fill="#dd513a"/><rect x="11" y="1" width="6" height="16" rx="1" fill="#33363d"/></svg>
+        <b>Firebreak</b><span class="sub" id="asof"></span>
+      </a>
+      <nav class="seg" id="views" aria-label="Workflow">
+        <button data-view="home">Home</button>
+        <button data-view="detect"><span class="n">1</span>Detect</button>
+        <button data-view="predict"><span class="n">2</span>Predict</button>
+        <button data-view="simulate"><span class="n">3</span>Simulate</button>
+        <button data-view="act"><span class="n">4</span>Act</button>
+        <button data-view="evidence"><span class="n">5</span>Evidence</button>
+      </nav>
+      <div class="search">
+        <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Search or jump to…" aria-label="Search" />
+        <kbd>⌘K</kbd>
+        <div id="q-results" hidden></div>
+      </div>
+      <div class="top-right">
+        <div class="live" id="live" title="Dallas 311 live feed"><i></i><span>snapshot</span></div>
+        <button class="btn" id="tour-btn" title="Guided tour (T)">Tour <kbd>T</kbd></button>
+        <button class="btn" id="share">Copy link</button>
+      </div>
+    </header>
+
+    <main id="stage">
+      <div id="map"></div>
+      <div class="legend card" id="legend"></div>
+      <div class="toolbar">
+        <button class="btn" id="pitch" title="Toggle 2D / 3D (P)">2D</button>
+      </div>
+      <div class="readout card" id="readout" hidden></div>
+      <footer id="timebar" class="card">
+        <div class="tb-row">
+          <button id="play" class="icon-btn" aria-label="Play (space)"><svg width="10" height="12" viewBox="0 0 10 12"><path d="M0 0l10 6-10 6z" fill="currentColor"/></svg></button>
+          <select id="speed" class="speed" aria-label="Speed"><option value="1">1×</option><option value="3" selected>3×</option><option value="7">7×</option></select>
+          <span class="date" id="date">—</span>
+          <span class="cap" id="caption"></span>
+        </div>
+        <div class="track">
+          <svg id="hist" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <input id="slider" type="range" min="0" max="820" value="730" step="1" aria-label="Date" />
+          <div class="ticks" id="ticks"></div>
+        </div>
+      </footer>
+      <div id="loading" class="loading"><span id="load-text">Loading 241,588 buildings and 2 years of 311 reports</span><div class="bar"><i id="load-bar"></i></div></div>
+    </main>
+
+    <aside id="side"><div id="panel"></div><div id="detail" hidden></div></aside>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

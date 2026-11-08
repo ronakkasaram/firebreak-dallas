@@ -2,63 +2,327 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Firebreak</title>
+  <meta name="description" content="Firebreak forecasts where property distress spreads next, traces it to the building that started it, and plans the repairs that stop it. Built on Dallas public records." />
+  <meta property="og:title" content="Firebreak: predict it, trace it, stop it" />
+  <meta property="og:description" content="A forecast, root-cause tracer and work planner for every building in a city, built from public records that share no IDs." />
+  <meta property="og:image" content="shots/predict.webp" />
+  <meta name="theme-color" content="#0b0c0e" />
+  <script>
+    // Old console links (#detect, #simulate-b123, #film) now live on app.html.
+    if (/^#(home|detect|predict|simulate|act|evidence|film)\b/.test(location.hash)) location.replace('app.html' + location.hash);
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
 </head>
 <body>
-  <div id="app">
-    <header id="topbar">
-      <div class="brand">
+  <header class="nav">
+    <div class="wrap nav-in">
+      <a class="mark" href="#top" aria-label="Firebreak home">
         <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><rect x="1" y="1" width="6" height="16" rx="1" fill="#dd513a"/><rect x="11" y="1" width="6" height="16" rx="1" fill="#33363d"/></svg>
-        <b>Firebreak</b><span class="sub" id="asof"></span>
-      </div>
-      <nav class="seg" id="views" aria-label="Workflow">
-        <button data-view="detect"><span class="n">1</span>Detect</button>
-        <button data-view="predict"><span class="n">2</span>Predict</button>
-        <button data-view="simulate"><span class="n">3</span>Simulate</button>
-        <button data-view="act"><span class="n">4</span>Act</button>
-        <button data-view="evidence"><span class="n">5</span>Evidence</button>
+        <b>Firebreak</b>
+      </a>
+      <nav class="links" aria-label="Sections">
+        <a href="#problem">Problem</a><a href="#how">How it works</a><a href="#teams">For teams</a><a href="#proof">Proof</a><a href="#platform">Platform</a><a href="#pricing">Pricing</a>
       </nav>
-      <div class="search">
-        <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Search or jump to…" aria-label="Search" />
-        <kbd>⌘K</kbd>
-        <div id="q-results" hidden></div>
-      </div>
-      <div class="top-right">
-        <div class="live" id="live" title="Dallas 311 live feed"><i></i><span>snapshot</span></div>
-        <button class="btn" id="tour-btn" title="Guided tour (T)">Tour <kbd>T</kbd></button>
-        <button class="btn" id="share">Copy link</button>
-      </div>
-    </header>
+      <a class="btn primary" href="app.html#home">Open the console</a>
+    </div>
+  </header>
 
-    <main id="stage">
-      <div id="map"></div>
-      <div class="legend card" id="legend"></div>
-      <div class="toolbar">
-        <button class="btn" id="pitch" title="Toggle 2D / 3D (P)">2D</button>
+  <main id="top">
+    <!-- hero -->
+    <section class="hero">
+      <div class="wrap hero-in">
+        <div class="hero-copy">
+          <p class="kicker">Built for HackUTD 2026, CBRE track: Predict Before It Spreads</p>
+          <h1>Property distress spreads like fire. <span>See where it goes next, and where to stop it.</span></h1>
+          <p class="lede">Firebreak forecasts every building in a city for the next 90 days, traces each new problem to the building that set it off,
+            and plans the few repairs that spare the most neighbours. It runs on public records that share no IDs, and it
+            stops at a person's approval.</p>
+          <div class="cta">
+            <a class="btn primary big" href="app.html#home">Open the console</a>
+            <a class="btn big" href="#promo">Watch it run</a>
+          </div>
+          <form class="lookup" id="lookup" autocomplete="off">
+            <label for="addr">Check a Dallas street</label>
+            <div class="lookup-row">
+              <input id="addr" name="addr" type="search" list="streets" placeholder="e.g. 2200 Boyd St" spellcheck="false" />
+              <button class="btn" type="submit">Look up</button>
+            </div>
+            <datalist id="streets"></datalist>
+            <small>Opens the building in the console with its Distress Factor, two-year history and root cause. Homes are shown at the 100-block level.</small>
+          </form>
+        </div>
+        <figure class="hero-shot">
+          <img src="shots/predict.webp" alt="Firebreak console: a 3D map of Dallas where hexagon height and colour show expected new property reports over the next 90 days" width="1230" height="872" fetchpriority="high" />
+        </figure>
       </div>
-      <div class="readout card" id="readout" hidden></div>
-      <footer id="timebar" class="card">
-        <div class="tb-row">
-          <button id="play" class="icon-btn" aria-label="Play (space)"><svg width="10" height="12" viewBox="0 0 10 12"><path d="M0 0l10 6-10 6z" fill="currentColor"/></svg></button>
-          <select id="speed" class="speed" aria-label="Speed"><option value="1">1×</option><option value="3" selected>3×</option><option value="7">7×</option></select>
-          <span class="date" id="date">—</span>
-          <span class="cap" id="caption"></span>
-        </div>
-        <div class="track">
-          <svg id="hist" preserveAspectRatio="none" aria-hidden="true"></svg>
-          <input id="slider" type="range" min="0" max="820" value="730" step="1" aria-label="Date" />
-          <div class="ticks" id="ticks"></div>
-        </div>
-      </footer>
-      <div id="loading" class="loading"><span id="load-text">Loading 241,588 buildings and 2 years of 311 reports</span><div class="bar"><i id="load-bar"></i></div></div>
-    </main>
+      <div class="wrap">
+        <dl class="ticker" aria-label="Key numbers">
+          <div><dt>Buildings scored</dt><dd data-k="buildings">—</dd></div>
+          <div><dt>City reports joined</dt><dd data-k="reports">—</dd></div>
+          <div><dt>Top 2,000 that got a report, held-out quarter</dt><dd data-k="precision">—</dd></div>
+          <div><dt>Median warning before the first call</dt><dd data-k="leadtime">—</dd></div>
+        </dl>
+      </div>
+    </section>
 
-    <aside id="side"><div id="panel"></div><div id="detail" hidden></div></aside>
-  </div>
-  <script type="module" src="/src/main.js"></script>
+    <!-- problem -->
+    <section class="band" id="problem">
+      <div class="wrap two">
+        <div>
+          <p class="eyebrow">01 · The problem</p>
+          <h2>One neglected building raises the odds for every building around it.</h2>
+        </div>
+        <div class="prose">
+          <p>A code violation, a vacant house, a landlord who stops answering. Each one is logged somewhere: 311, the appraisal
+            roll, a permit system. None of those systems share an ID, so no one sees the pattern until the block has already tipped.</p>
+          <p>Dashboards show what already happened. Inspectors still work the queue in the order calls arrive. By the time a cluster
+            is obvious, the cheapest fix, at the building where it started, is months behind.</p>
+        </div>
+      </div>
+      <div class="wrap">
+        <div class="facts">
+          <div class="fact"><b data-k="block">—</b><span>higher odds of a new report when the building next door had one in the last 30 days</span></div>
+          <div class="fact"><b data-k="owner">—</b><span>higher odds when another building with the <em>same owner</em> had one: a hidden dependency no map shows</span></div>
+          <div class="fact"><b data-k="spread">—</b><span>of Dallas property reports were most likely set off by an earlier report nearby (Hawkes model)</span></div>
+          <div class="fact muted"><b data-k="infra">—</b><span>for shared pipes and streets. We tested it, and it isn't a real link. We say so.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- how it works -->
+    <section class="band" id="how">
+      <div class="wrap">
+        <p class="eyebrow">02 · How it works</p>
+        <h2 class="narrow">Five screens, one loop: detect, predict, simulate, act, and prove it.</h2>
+      </div>
+      <div class="wrap steps">
+        <article class="step">
+          <div class="step-t"><span class="num">1</span><h3>Detect what is starting now</h3>
+            <p>Every 311 report on the map, a live pull of today's reports, and a subset-scan alarm for clusters growing faster than their own history.</p></div>
+          <img src="shots/home.webp" alt="Home screen: today's strongest cluster, open cases and data health beside a map of recent reports" loading="lazy" width="1230" height="872" />
+        </article>
+        <article class="step">
+          <div class="step-t"><span class="num">2</span><h3>Predict the next 90 days</h3>
+            <p>Gradient-boosted risk for every building, calibrated with Venn-Abers intervals, plus a certified list that promises at most 10% wrong, and a neural field for the blocks nobody calls about.</p></div>
+          <img src="shots/neural.webp" alt="Neural field: a grid of expected reports with search crews' routes drawn across quiet blocks" loading="lazy" width="1230" height="872" />
+        </article>
+        <article class="step">
+          <div class="step-t"><span class="num">3</span><h3>Simulate one building, 400 futures</h3>
+            <p>Click any building. A spatio-temporal Hawkes model plays out its cascade 400 times, then a CELF search finds the three repairs that spare the most reports at other houses.</p></div>
+          <img src="shots/simulate.webp" alt="Simulation: trigger arcs from one building to its neighbours, with three stabilised buildings ringed in green" loading="lazy" width="1230" height="872" />
+        </article>
+        <article class="step">
+          <div class="step-t"><span class="num">4</span><h3>Act: from alarm to approved case</h3>
+            <p>Press R on a cluster. The playbook traces it to its origin, simulates it, costs the work orders and routes a crew, all with the console's own tools, then waits for a person to hold Approve.</p></div>
+          <img src="shots/playbook.webp" alt="Resolution playbook: six logged steps ending in a case with four work orders, a cost and a crew route" loading="lazy" width="1230" height="872" />
+        </article>
+        <article class="step">
+          <div class="step-t"><span class="num">5</span><h3>Evidence for every claim</h3>
+            <p>A model card with each test on a quarter the model never saw, a fairness audit by council district, and the experiments that failed.</p></div>
+          <img src="shots/evidence.webp" alt="Evidence: a map of model recall by council district beside the model card" loading="lazy" width="1230" height="872" />
+        </article>
+      </div>
+    </section>
+
+    <!-- a morning -->
+    <section class="band" id="day">
+      <div class="wrap two">
+        <div>
+          <p class="eyebrow">03 · In use</p>
+          <h2>A Monday with Firebreak</h2>
+          <p class="sub">A code-compliance supervisor in Dallas, start to finish. Every step is a real screen in the console.</p>
+        </div>
+        <ol class="timeline">
+          <li><time>8:00</time><div><b>Home</b><p>The brief names the strongest cluster this week: <span data-k="topObs">—</span> new cases in <span data-k="topWin">—</span> days where <span data-k="topExp">—</span> were expected, across <span data-k="topB">—</span> buildings.</p></div></li>
+          <li><time>8:02</time><div><b>Resolve</b><p>The playbook traces the cluster to the building where it most likely started, runs 400 futures and picks the firebreaks.</p></div></li>
+          <li><time>8:03</time><div><b>Approve</b><p>The case shows cost, reports prevented and a 2-opt crew route. The supervisor holds Approve. Nothing is sent anywhere.</p></div></li>
+          <li><time>8:30</time><div><b>Dispatch</b><p>The route opens in Google Maps for the crew; the case moves to <em>Crew dispatched</em> with a timestamp.</p></div></li>
+          <li><time>Thu</time><div><b>Resolve</b><p>The crew reports back. The case closes with an outcome, and the export goes into the department's own system as CSV.</p></div></li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- teams -->
+    <section class="band" id="teams">
+      <div class="wrap">
+        <p class="eyebrow">04 · For teams</p>
+        <h2 class="narrow">One engine, three jobs. Each team gets its own Home.</h2>
+      </div>
+      <div class="wrap personas">
+        <article>
+          <h3>Code compliance</h3>
+          <p class="who">City inspectors, neighbourhood services, council offices</p>
+          <ul>
+            <li>Morning brief with the clusters to work first</li>
+            <li>One-page council district brief and tomorrow's route</li>
+            <li>Budget plan ranked by reports prevented per dollar, never by property value</li>
+            <li>District-fair re-ranking, audited with the four-fifths rule</li>
+          </ul>
+          <p class="out"><b data-k="early">—</b> cases a 50-visit-a-day crew reaches before the first call</p>
+        </article>
+        <article>
+          <h3>Owners and managers</h3>
+          <p class="who">Portfolio, asset and property managers</p>
+          <ul>
+            <li>The share of a portfolio's risk that comes from buildings it does not own</li>
+            <li>Which outside buildings to fix or buy first</li>
+            <li>A stress test: inject reports at any building and watch the cascade</li>
+            <li>A watchlist that flags new 311 reports at or near your buildings</li>
+          </ul>
+          <p class="out"><b data-k="tenants">—</b> business tenants linked to the buildings they occupy</p>
+        </article>
+        <article>
+          <h3>Acquisitions</h3>
+          <p class="who">Investors and wholesale buyers</p>
+          <ul>
+            <li>Distressed, non-owner-occupied leads, scored for expected fee per contact</li>
+            <li>Offer waterfall and seller odds by discount band</li>
+            <li>Natural buyers: the portfolios next door that lose most if a house tips</li>
+            <li>Drive-for-dollars loops, routed and handed to Maps</li>
+          </ul>
+          <p class="out"><b data-k="leads">—</b> leads today, owner-occupied homes never included</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- proof -->
+    <section class="band" id="proof">
+      <div class="wrap two">
+        <div>
+          <p class="eyebrow">05 · Proof</p>
+          <h2>Tested on a quarter the model never saw. Including where it lost.</h2>
+          <p class="sub">The model was frozen on <span data-k="cutoff">—</span> and scored on the 90 days that followed. Every number on this page is read from the same files the console loads.</p>
+        </div>
+        <div class="tw">
+          <table class="proof">
+            <thead><tr><th>Claim</th><th>Result</th><th></th></tr></thead>
+            <tbody id="proof-rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- platform -->
+    <section class="band" id="platform">
+      <div class="wrap two">
+        <div>
+          <p class="eyebrow">06 · Platform</p>
+          <h2>Built to move to the next city.</h2>
+          <div class="prose">
+            <p>The pipeline needs two inputs: a property roll with locations, which every county appraisal district publishes, and a
+              time-stamped event log with coordinates. Dallas 311 comes from Socrata, and many US cities publish the same kind of log through the
+              Open311 GeoReport v2 standard. Swap the two loaders and every screen, test and audit reruns.</p>
+            <p>The output is a set of static files with a written contract, so it serves from any CDN with no database, and the console
+              renders <span data-k="buildings2">—</span> buildings in the browser.</p>
+          </div>
+        </div>
+        <div class="stack">
+          <div class="tw">
+            <table class="files">
+              <thead><tr><th>Endpoint</th><th>What it holds</th></tr></thead>
+              <tbody>
+                <tr><td><code>/data/meta.json</code></td><td>Counts, the held-out test, edge ratios, assumptions with sources</td></tr>
+                <tr><td><code>/data/buildings.bin</code></td><td>Columnar building table: location, class, risk, Distress Factor inputs</td></tr>
+                <tr><td><code>/data/events.bin</code></td><td>Every 311 report, sorted by day, placed on a building</td></tr>
+                <tr><td><code>/data/hawkes.json</code></td><td>Spread model: parameters, branching, spread rate by month</td></tr>
+                <tr><td><code>/data/alarms.json</code></td><td>Cluster alarms and their backtest</td></tr>
+                <tr><td><code>/data/falcon.json</code></td><td>Neural field, training log and head-to-head backtest</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <pre class="code" aria-label="Example request"><code>$ curl -s https://&lt;host&gt;/data/meta.json | jq '.model.network'
+{ "auc": <span data-k="auc">—</span>, "watch_list": 2000,
+  "watch_precision": <span data-k="wp">—</span>, "base_rate": <span data-k="br">—</span> }</code></pre>
+          <ul class="roadmap">
+            <li><span class="tag now">Today</span>Static files, CSV and GeoJSON exports, live 311 polling, cases kept in the browser</li>
+            <li><span class="tag next">Next</span>A shared case store and sign-in per team, alert subscriptions, an Open311 loader for a second city</li>
+            <li><span class="tag next">Next</span>Inside one campus: assets as nodes, work orders and alarms as events</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- promo -->
+    <section class="band" id="promo">
+      <div class="wrap two">
+        <div>
+          <p class="eyebrow">07 · See it run</p>
+          <h2>The promo is the product.</h2>
+          <p class="sub">Film mode plays the guided tour full screen, between a title card and an end card. Every shot is the live console.
+            Press <kbd>F</kbd> in the console, start a screen recording, and stop when the end card fades.</p>
+          <div class="cta">
+            <a class="btn primary big" href="app.html#film">Play film mode</a>
+            <a class="btn big" href="app.html#home">Explore on your own</a>
+          </div>
+          <p class="fine">Browsers only allow full screen after a click, so a direct link plays in the window. Press <kbd>F</kbd> inside the console for full screen.</p>
+        </div>
+        <ol class="storyboard" id="storyboard"></ol>
+      </div>
+    </section>
+
+    <!-- pricing -->
+    <section class="band" id="pricing">
+      <div class="wrap">
+        <p class="eyebrow">08 · Pricing</p>
+        <h2 class="narrow">Priced to grow with the ground you cover.</h2>
+        <p class="sub narrow">Cities and portfolios pay per building watched; buyers pay per seat. Illustrative pilot pricing for discussion, not a quote.</p>
+      </div>
+      <div class="wrap plans">
+        <article>
+          <h3>City</h3>
+          <p class="price"><b>$0.10</b> per building a year</p>
+          <p class="eg">Dallas, <span data-k="cityCost">—</span> a year: about the cost of <span data-k="cityInspections">—</span> inspections at the console's placeholder rate.</p>
+          <ul><li>All five screens for every department</li><li>Council district briefs and fairness audit</li><li>Unlimited users, cases and exports</li></ul>
+        </article>
+        <article class="hl">
+          <h3>Portfolio</h3>
+          <p class="price"><b>$2</b> per building a month</p>
+          <p class="eg">Your buildings and everything within 700 m of them, scored and simulated.</p>
+          <ul><li>Neighbour exposure and buy-or-fix list</li><li>Watchlist flags and stress tests</li><li>Portfolio CSV and GeoJSON exports</li></ul>
+        </article>
+        <article>
+          <h3>Acquisitions</h3>
+          <p class="price"><b>$149</b> per seat a month</p>
+          <p class="eg">Lead lists refreshed with every build, scored by expected fee per contact.</p>
+          <ul><li>Deal desk and buyer teasers</li><li>Natural buyers next door</li><li>Drive-for-dollars routes</li></ul>
+        </article>
+      </div>
+    </section>
+
+    <!-- faq -->
+    <section class="band" id="faq">
+      <div class="wrap two">
+        <div><p class="eyebrow">09 · Questions</p><h2>What people ask first</h2></div>
+        <div class="faq">
+          <details><summary>Does it send anything to anyone?</summary><p>No. There is no email, SMS, mail or call integration. Every plan ends at a person's approval, and cases are exported, not sent.</p></details>
+          <details><summary>Does it name owners or residents?</summary><p>No. Owners are hashed before anything reaches the browser, homes are shown at the 100-block level, and owner-occupied homes are never on a lead list.</p></details>
+          <details><summary>Is the playbook an AI agent?</summary><p>It is an agent in the plain sense: a fixed plan of the console's own tool calls, each reading the last one's result. It is not a language model, so every number in its log is computed, and it stops for a human.</p></details>
+          <details><summary>Does it rank rich neighbourhoods first?</summary><p>Never by property value. The budget plan ranks by reports prevented per dollar; ranking by value sent the whole budget to the wealthiest district, so we dropped it.</p></details>
+          <details><summary>Where does it fall short?</summary><p>311 measures what people report, not what exists. Our neural network lost to the boosted model, and the case-closure study found no causal effect. The Evidence screen shows all three.</p></details>
+          <details><summary>How fresh is the data?</summary><p>The Home screen's data-health table shows the age of every source. The live feed polls Dallas Open Data from the browser and re-scores buildings near each new report.</p></details>
+        </div>
+      </div>
+    </section>
+
+    <section class="band last">
+      <div class="wrap closer">
+        <h2>Predict it. Trace it. Stop it.</h2>
+        <a class="btn primary big" href="app.html#home">Open the console</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap foot-in">
+      <span>Firebreak · HackUTD 2026 · CBRE track</span>
+      <span>Data: Dallas Open Data 311 (d7e7-envw), DCAD 2026 certified roll · as of <span data-k="asof">—</span></span>
+    </div>
+  </footer>
+
+  <script type="module" src="/src/site/site.js"></script>
 </body>
 </html>
