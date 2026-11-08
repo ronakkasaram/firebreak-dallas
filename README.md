@@ -91,15 +91,15 @@ With no house picked, arcs link each report since mid-2026 to the earlier report
 
 ## The demo
 
-Plan for a 3 minute pitch and 2 minutes of questions.
+The console follows one workflow, keys 1 to 5. The presenter guide, with scripts, numbers and hard questions, is in [docs/PITCH.md](docs/PITCH.md).
 
-1. **Spread.** Press play. Two years of Dallas 311 reports appear block by block. "This is what fragmented looks like: 4 systems, no shared IDs."
-2. **Broken.** Point at the side panel: CBRE's claim crossed out, with 3 measured links below it. Next door and same owner are lit; pipes and streets is gray.
-3. **Proof.** Click `[ proof ]`. The model is frozen on Jul 1, 2026. Press play. Watch columns turn green as reports land on the buildings it flagged. "It called 1,228 of 2,000. Chance would have called about 128."
-4. **Next 90 days.** The city becomes a terrain of expected reports that rises as you drag forward.
-5. **Act.** Click the top hotspot. The camera flies in and the owner's other buildings arc out. Show why, what spreading costs, and the crew's plan. **Hold to approve.**
-6. **House by house.** Click `[ house by house ]`: arcs show which report set off which. Click a hot house. "33% chance of a new report, and here is what is pushing on it." Press **find 3 firebreaks** and read the reports spared and the neighbour value protected. Drag the slider to watch the odds rise over 90 days.
-7. **Wholesale (if time allows, or in Q&A).** Click `[ wholesale ]`. "The same signal finds motivated sellers before any list provider does." Open *Code stack* and *Tired landlord* and read their backtest hit rates, then queue one lead for WHOLZR.
+1. **Detect.** Every Dallas property report, played back over two years. Emerging clusters from an expectation-based subset scan, the live 311 feed since the snapshot, and the spread rate R by month and council district.
+2. **Predict.** The 90-day forecast terrain, the backtest replay (model frozen on Jul 1, 2026), the certified list (conformal selection, at most 10% expected wrong) and the calibration chart. Priority interventions open a dossier with a response plan.
+3. **Simulate.** Click any building: 400 simulated futures for it and every building within 700 m, what drives it, and the 3 firebreaks that spare the most reports next door.
+4. **Act.** A budget plan ranked by reports prevented per dollar, a portfolio view of the risk coming from neighbours an owner does not control, work-order export and hold to approve. Acquisition leads for repair-and-resell buyers sit in a third tab.
+5. **Evidence.** The model card: data joins, held-out results, the Hawkes fit and residuals, fairness by council district, the closure natural experiment with its placebos, and limits.
+
+Search (`/`) finds streets, 100-blocks, building names and company portfolios. Every view has a shareable link (`#detect`, `#simulate-b83148`).
 
 ## The numbers behind the dollars
 
@@ -152,7 +152,7 @@ Claim a row by putting your login in it here and in [AGENTS.md](AGENTS.md).
 # console only (uses the committed data)
 cd web && npm install && npm run dev          # http://localhost:5173
 
-# full pipeline (about 6 minutes)
+# full pipeline (about 45 minutes on a laptop)
 cd backend && uv sync
 uv run python -m firebreak.fetch_311           # Dallas 311, about 2 min
 DCAD_ZIP=/path/to/DCAD2026_CURRENT.zip uv run python -m firebreak.dcad
@@ -172,13 +172,17 @@ backend/firebreak/
   model.py       features as of any date, labels 90 days later, base vs network models, the link tests
   hawkes.py      house-by-house Hawkes model: EM fit, held-out test, declustering arcs, expected reports
   audit.py       days-of-warning metric, fairness by council district, district-fair re-ranking
+  scan.py        emerging-cluster alarms: expectation-based Poisson scan with the fast subset scan, and its backtest
+  calibrate.py   Venn-Abers intervals and conformal selection (Benjamini-Hochberg) for the certified list
+  causal.py      natural experiment: does closing a code case fast protect the neighbours? With placebos
   plan.py        reports prevented next door, dollars, WHOLZR underwriting, buyer matching, crew plan
   lists.py       wholesale lead lists, their backtest, and the private owner export for WHOLZR
   build.py       runs everything and writes web/public/data/
 web/src/
-  main.js        deck.gl + MapLibre map: spread, proof, next-90-days, wholesale and house-by-house modes, time slider
+  main.js        deck.gl + MapLibre map, the five views, search, links, timeline, budget plan and portfolio
+  live.js        live Dallas 311 feed since the snapshot, matched to buildings and scored with the Hawkes kernel
   sim.worker.js  Monte Carlo cascades, exact expected counts and the CELF firebreak search, off the main thread
-  panels.js      claim card, hotspot list, dossier, hold to approve
+  panels.js      side panels for each view, charts, dossier, hold to approve, legend
 ```
 
 ## Privacy and honesty

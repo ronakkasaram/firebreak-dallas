@@ -759,6 +759,60 @@
    "dtype": "uint8",
    "offset": 5314936,
    "length": 241588
+  },
+  {
+   "name": "risk_lo",
+   "dtype": "uint8",
+   "offset": 5556524,
+   "length": 241588
+  },
+  {
+   "name": "risk_hi",
+   "dtype": "uint8",
+   "offset": 5798112,
+   "length": 241588
+  },
+  {
+   "name": "certified",
+   "dtype": "uint8",
+   "offset": 6039700,
+   "length": 241588
+  },
+  {
+   "name": "push_nb",
+   "dtype": "uint16",
+   "offset": 6281288,
+   "length": 241588
+  },
+  {
+   "name": "push_share",
+   "dtype": "uint8",
+   "offset": 6764464,
+   "length": 241588
+  },
+  {
+   "name": "spare",
+   "dtype": "uint16",
+   "offset": 7006052,
+   "length": 241588
+  },
+  {
+   "name": "street",
+   "dtype": "uint16",
+   "offset": 7489228,
+   "length": 241588
+  },
+  {
+   "name": "block",
+   "dtype": "uint16",
+   "offset": 7972404,
+   "length": 241588
+  },
+  {
+   "name": "owner",
+   "dtype": "uint16",
+   "offset": 8455580,
+   "length": 241588
   }
  ],
  "events_layout": [

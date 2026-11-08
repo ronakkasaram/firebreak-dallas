@@ -10,7 +10,10 @@ Outputs (see docs/CONTRACT.md for every field):
     events.bin       every property report in the last 24 months (position, day, kind)
     hotspots.json    the 400 buildings where stabilizing now prevents the most damage, with plans
     lists.json       wholesale lead lists with their backtest
-    hawkes.json      the house-by-house spread model: fitted parameters, held-out fit, trigger arcs
+    hawkes.json      the house-by-house spread model: fitted parameters, held-out fit, trigger arcs,
+                     realised reproduction number by month and council district
+    alarms.json      emerging-cluster alarms (expectation-based fast subset scan) and their backtest
+    evidence.json    calibration and certified-list results, and the case-closure natural experiment
 """
 
 from __future__ import annotations
@@ -25,7 +28,7 @@ import pandas as pd
 
 import os
 
-from . import audit, dcad, geo, hawkes, lists, model, plan
+from . import audit, calibrate, causal, dcad, geo, hawkes, lists, model, plan, scan
 
 ROOT = Path(__file__).resolve().parents[2]
 WORK = ROOT / "data" / "work"
@@ -56,6 +59,10 @@ def _pool_edges(w: model.World) -> dict:
                      "rate_matched": round(r0, 4), "ratio": round(r1 / r0, 2),
                      "per_cutoff": {c: r["ratio"] for c, r in zip(EDGE_TESTS, rs)}}
     return out
+
+
+def _fx(x):
+    return np.clip(np.round(np.asarray(x) * 5000), 0, 65535).astype(np.uint16)
 
 
 def _u8(x: np.ndarray) -> np.ndarray:
@@ -183,7 +190,64 @@ def main() -> None:
                        "gbm_watch_precision": report["network"]["watch_precision"],
                        "note": "The gradient-boosted model ranks better; Hawkes is used to simulate spread, not to rank."}
     hk["as_of"] = today.strftime("%Y-%m-%d")
+    log("reproduction number")
+    hk["reproduction"] = hawkes.reproduction(P_h, Z_h, w.pxy, ki_h, events, pd.Timestamp("2024-07-01"), today)
     (OUT / "hawkes.json").write_text(json.dumps(hk, default=float))
+
+    log("alarms")
+    (OUT / "alarms.json").write_text(json.dumps(scan.run(parcels, w.pxy, events, today, log=log), default=float))
+
+    log("calibration: train to 2026-01-01, calibrate on 2026-04-01, test on 2026-07-01")
+    def fit_upto(last):
+        cs = [c for c in EVAL_TRAIN if c <= last]
+        Xc = pd.concat([model.features(w, pd.Timestamp(c)) for c in cs], ignore_index=True)
+        yc = np.concatenate([model.labels(w, pd.Timestamp(c)) for c in cs])
+        return model._fit(Xc[model.ALL], yc)
+    m_a = fit_upto("2026-01-01")
+    Tc = pd.Timestamp("2026-04-01")
+    s_cal = m_a.predict_proba(model.features(w, Tc)[model.ALL])[:, 1]
+    y_cal = model.labels(w, Tc)
+    s_tst = m_a.predict_proba(X_eval[model.ALL])[:, 1]
+    calib_eval = calibrate.evaluate(s_cal, y_cal, s_tst, hit_eval, district, district)
+    # Live: the same recipe one step later. Train to 2026-04-01, calibrate on 2026-07-01, apply today.
+    m_b = fit_upto("2026-04-01")
+    s_cal2 = m_b.predict_proba(X_eval[model.ALL])[:, 1]
+    s_now = m_b.predict_proba(Xn[model.ALL])[:, 1]
+    va_lo, va_hi, va_p = calibrate.venn_abers(s_cal2, hit_eval, s_now)
+    certified = calibrate.select(s_cal2, hit_eval, s_now, 0.10)
+    log(f"certified list today: {int(certified.sum())} buildings at q = 0.10")
+
+    log("closure natural experiment")
+    closure = causal.study(parcels, events, today, log=log)
+    (OUT / "evidence.json").write_text(json.dumps({
+        "calibration": {"train_to": "2026-01-01", "calibrate_on": "2026-04-01", "test_on": EVAL_TEST, **calib_eval},
+        "live": {"train_to": "2026-04-01", "calibrate_on": EVAL_TEST, "q": 0.10, "certified": int(certified.sum()),
+                 "certified_idx": np.flatnonzero(certified).tolist()},
+        "closure": closure,
+    }, default=float))
+
+    log("pressure on each building today")
+    push_bg, push_self, push_nb = hawkes.expected_reports(P_h, Z_h, w.pxy, ki_h, events, today, parts=True)
+    spare = hawkes.spared(P_h, Z_h, w.pxy, ki_h, events, today, push_bg + push_self + push_nb)
+    log(f"spared: mean {spare.mean():.4f}, top 1% {np.quantile(spare, 0.99):.3f}")
+
+    # Search index: street names and 100-block numbers (addresses are shown at block level, the way
+    # police crime maps publish them), and company portfolios with 3+ buildings.
+    m_num = parcels.street.str.extract(r"^(\d+)\s+(.*)$")
+    street_name = (m_num[1].fillna(parcels.street).str.title() + " " + parcels.zip.astype(str)).to_numpy()
+    streets, street_idx = np.unique(street_name, return_inverse=True)
+    block = (pd.to_numeric(m_num[0], errors="coerce").fillna(0) // 100 * 100).clip(0, 65000).to_numpy(np.uint16)
+    lab = parcels.owner_label.fillna("")
+    sizes = parcels[lab != ""].groupby("owner_id").size()
+    big = sizes[sizes >= 3].index
+    owners = parcels[parcels.owner_id.isin(big) & (lab != "")].groupby("owner_id").owner_label.first()
+    owner_ids = list(owners.index)
+    owner_col = parcels.owner_id.map({o: i + 1 for i, o in enumerate(owner_ids)}).fillna(0).to_numpy(np.uint16)
+    (OUT / "search.json").write_text(json.dumps({
+        "streets": streets.tolist(),
+        "owners": [{"label": owners[o], "buildings": int(sizes[o])} for o in owner_ids],
+        "names": {int(i): n for i, n in parcels.property_name.items() if isinstance(n, str) and n.strip()},
+    }))
 
     cls = parcels.asset_class.map(model.CLASS_CODE).to_numpy().astype(np.uint8)
     cols = [
@@ -192,6 +256,11 @@ def main() -> None:
         ("risk", _u8(risk)), ("lift", _u8(lift_pts * 4)), ("risk_backtest", _u8(risk_eval)), ("hit_backtest", hit_eval),
         ("class", cls), ("reports_365", np.clip(Xn.own365.to_numpy(), 0, 255).astype(np.uint8)),
         ("mu", mu.astype(np.float32)), ("district", district.astype(np.uint8)),
+        ("risk_lo", _u8(va_lo)), ("risk_hi", _u8(va_hi)), ("certified", certified.astype(np.uint8)),
+        # Pressure columns are fixed-point to keep the file under 10 MB: value / 5000 = expected reports.
+        ("push_nb", _fx(push_nb)), ("push_share", _u8(push_nb / np.maximum(push_bg + push_self + push_nb, 1e-9))),
+        ("spare", _fx(spare)),
+        ("street", street_idx.astype(np.uint16)), ("block", block), ("owner", owner_col),
     ]
     layout, offset = [], 0
     with open(OUT / "buildings.bin", "wb") as f:

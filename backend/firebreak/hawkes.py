@@ -94,6 +94,7 @@ class Window:
     pair_dt: np.ndarray
     pair_d: np.ndarray
     pair_self: np.ndarray
+    src_d: np.ndarray | None = None  # council district of each source report, when known
 
 
 def window(pxy: np.ndarray, key_index: dict, events: pd.DataFrame, h0, w0, w1) -> Window:
@@ -135,7 +136,7 @@ def window(pxy: np.ndarray, key_index: dict, events: pd.DataFrame, h0, w0, w1) -
     cat = lambda a, dt=None: np.concatenate(a) if a else np.zeros(0, dt or float)  # noqa: E731
     return Window(T=T, src_t=t, src_k=k, src_own=own, src_xy=exy, G=G, tgt_b=own[tgt_rows], tgt_src=tgt_rows,
                   pair_t=cat(pt, np.int64), pair_e=cat(pe, np.int64), pair_dt=cat(pdt), pair_d=cat(pdd),
-                  pair_self=cat(ps, bool))
+                  pair_self=cat(ps, bool), src_d=ev.district.to_numpy() if "district" in ev else None)
 
 
 @dataclass
@@ -247,6 +248,7 @@ def run(parcels: pd.DataFrame, pxy: np.ndarray, events: pd.DataFrame, today: pd.
     Zte = with_chronic(Z0, key_index, events, ts("2026-01-01"))
     ll_h = loglik(Wte, P, Zte)[0]
     ll_p = poisson_loglik(Wte, theta0, Zte)
+    ks = residual_ks(Wte, P, Zte, theta0)
     n_te = len(Wte.tgt_b)
 
     # Mean neighbor exposure, so the branching ratio means "offspring per report" in Dallas.
@@ -287,7 +289,7 @@ def run(parcels: pd.DataFrame, pxy: np.ndarray, events: pd.DataFrame, today: pd.
                 "triggered_share": round(float(1 - p_bg_tr.mean()), 4),
                 "spread_share": round(float(np.bincount(Wtr.pair_t, p_slow_tr, minlength=len(Wtr.tgt_b)).mean()), 4),
                 "triggered_share_recent": round(float(1 - p_bg_now.mean()), 4) if len(p_bg_now) else None,
-                "mean_neighbor_exposure": round(mean_G, 3)},
+                "mean_neighbor_exposure": round(mean_G, 3), "residuals": ks},
         "branching": branching,
         "arcs": arcs,
         "arcs_columns": ["src_lon", "src_lat", "dst_lon", "dst_lat", "p", "day_since_window_start", "src_kind"],
@@ -303,7 +305,7 @@ def _lonlat(v: np.ndarray) -> list[float]:
 
 
 def expected_reports(P: Params, Z: np.ndarray, pxy: np.ndarray, key_index: dict, events: pd.DataFrame,
-                     T: pd.Timestamp, horizon: float = 90.0) -> np.ndarray:
+                     T: pd.Timestamp, horizon: float = 90.0, parts: bool = False):
     """Expected new reports per building in (T, T + horizon], from its background rate plus the
     slow (spread) part of every deduplicated report in the 180 days before T (Z: covariates without
     the chronic column, which is added here for T). First order: it does
@@ -315,9 +317,11 @@ def expected_reports(P: Params, Z: np.ndarray, pxy: np.ndarray, key_index: dict,
     # Share of each report's slow kernel that lands inside the horizon.
     b = P.beta[1]
     mass = (1 - P.pi) * (np.exp(-b * age) - np.exp(-b * (age + horizon)))
-    m = horizon * np.exp(with_chronic(Z, key_index, events, T) @ P.theta)
+    bg = horizon * np.exp(with_chronic(Z, key_index, events, T) @ P.theta)
     own = W.src_own[past]
-    np.add.at(m, own[own >= 0], (P.a_self[k] * mass)[own >= 0])
+    selfp = np.zeros(len(bg))
+    np.add.at(selfp, own[own >= 0], (P.a_self[k] * mass)[own >= 0])
+    m = np.zeros(len(bg))
     tree = cKDTree(pxy)
     lists = tree.query_ball_point(W.src_xy[past], R)
     for j, nb in enumerate(lists):
@@ -326,4 +330,108 @@ def expected_reports(P: Params, Z: np.ndarray, pxy: np.ndarray, key_index: dict,
         if len(nb):
             d = np.linalg.norm(pxy[nb] - W.src_xy[past][j], axis=1)
             m[nb] += P.a_nb[k[j]] * np.exp(-d / P.sigma) * mass[j]
-    return m
+    if parts:
+        return bg, selfp, m  # background, own past reports, neighbours' past reports
+    return bg + selfp + m
+
+
+def reproduction(P: Params, Z0: np.ndarray, pxy: np.ndarray, key_index: dict, events: pd.DataFrame,
+                 start: pd.Timestamp, end: pd.Timestamp) -> dict:
+    """Realised reproduction number by month and council district (Wallinga & Teunis 2004, with the
+    Hawkes E-step as the who-infected-whom probabilities).
+
+    Each report's offspring = sum over later reports of the probability that it set them off, on
+    the slow (spread) scale only. Recent reports have not had time to show all their offspring, so
+    each is divided by the share of its kernel already elapsed (a nowcast); months where that share
+    is under 60% are flagged provisional. A model with a background rate is endemic plus epidemic:
+    R < 1 always here, and 1 / (1 - R) is how many reports one background problem turns into.
+    """
+    W = window(pxy, key_index, events, start - pd.Timedelta(days=DT_MAX), start, end)
+    Z = with_chronic(Z0, key_index, events, start)
+    _, p_bg, _, p_slow = loglik(W, P, Z)
+    off = np.bincount(W.pair_e, p_slow, minlength=len(W.src_t))
+    src = np.flatnonzero(W.src_t >= 0)
+    b = P.beta[1]
+    elapsed = (1 - np.exp(-b * np.minimum(W.T - W.src_t[src], DT_MAX))) / (1 - np.exp(-b * DT_MAX))
+    r = off[src] / np.clip(elapsed, 0.05, None)
+    month = (start + pd.to_timedelta(W.src_t[src], unit="D")).to_period("M").astype(str)
+    d = W.src_d[src] if W.src_d is not None else np.zeros(len(src), int)
+    df = pd.DataFrame({"month": month, "district": d, "r": r, "elapsed": elapsed})
+    # Triggered share among targets (reports at known buildings) by month.
+    tmonth = (start + pd.to_timedelta(W.src_t[W.tgt_src], unit="D")).to_period("M").astype(str)
+    trig = pd.Series(1 - p_bg).groupby(tmonth).mean()
+    city = df.groupby("month").agg(r=("r", "mean"), n=("r", "size"), elapsed=("elapsed", "mean"))
+    by_d = df[df.district > 0].groupby(["district", "month"]).r.mean().unstack()
+    months = list(city.index)
+    return {
+        "months": months,
+        "city": [{"month": m, "r": round(float(city.r[m]), 4), "amplifier": round(float(1 / max(1 - city.r[m], 1e-3)), 3),
+                  "reports": int(city.n[m]), "provisional": bool(city.elapsed[m] < 0.6),
+                  "triggered_share": round(float(trig.get(m, np.nan)), 4)} for m in months],
+        "districts": {int(k): [None if pd.isna(v) else round(float(v), 4) for v in by_d.loc[k].reindex(months)] for k in by_d.index},
+    }
+
+
+def residual_ks(W: Window, P: Params, Z: np.ndarray, theta0: np.ndarray | None = None) -> dict:
+    """Ogata (1988) time-rescaling check. If the model is right, the city-wide compensator between
+    consecutive reports (at known buildings) is exponential with mean 1. Returns the KS distance for
+    the Hawkes model and, if theta0 is given, for the no-spread Poisson model on the same window.
+
+    Compensator from window start to t, per time scale k:
+        M t + sum_k pi_k * ( sum_e wbar_e * exp(-beta_k * max(0, -t_e))  -  sum_e wbar_e * exp(-beta_k (t - t_e)) )
+    over sources e before t; both sums update in one pass in time order."""
+    from scipy.stats import kstest
+    M = float(np.exp(Z @ P.theta).sum())
+    wbar = P.a_self[W.src_k] * (W.src_own >= 0) + P.a_nb[W.src_k] * W.G[P.sigma]
+    pis = np.array([P.pi, 1 - P.pi])
+    order = np.argsort(W.src_t, kind="stable")
+    is_tgt = np.zeros(len(W.src_t), bool)
+    is_tgt[W.tgt_src] = True
+    S, added = np.zeros(2), np.zeros(2)
+    last_t = float(W.src_t[order[0]]) if len(order) else 0.0
+    comp, prev = [], None
+    for e in order:
+        t = float(W.src_t[e])
+        S *= np.exp(-P.beta * (t - last_t))
+        last_t = t
+        if t >= 0 and is_tgt[e]:
+            lam = M * t + float(pis @ (added - S))
+            if prev is not None:
+                comp.append(lam - prev)
+            prev = lam
+        S += wbar[e]
+        added += wbar[e] * np.exp(-P.beta * max(0.0, -t))
+    tau = np.array(comp)
+    out = {"ks_hawkes": round(float(kstest(tau, "expon").statistic), 4), "n": int(len(tau))}
+    if theta0 is not None:
+        tt = np.sort(W.src_t[W.tgt_src])
+        tau0 = np.diff(tt) * float(np.exp(Z @ theta0).sum())
+        out["ks_poisson"] = round(float(kstest(tau0, "expon").statistic), 4)
+    return out
+
+
+def spared(P: Params, Z: np.ndarray, pxy: np.ndarray, key_index: dict, events: pd.DataFrame, T: pd.Timestamp,
+           own_future: np.ndarray, horizon: float = 90.0) -> np.ndarray:
+    """Expected reports at *other* buildings in the next `horizon` days that stabilizing each
+    building today would prevent, to first order:
+      - its past reports' remaining slow push on neighbours, plus
+      - the push its own expected future reports would have had (each lands, on average, part-way
+        through the horizon, so only part of its kernel falls inside).
+    G_i = sum over buildings within R of exp(-d / sigma) is the building's neighbour exposure."""
+    counts = np.column_stack([cKDTree(pxy).query_ball_point(pxy, r, return_length=True) for r in SHELLS]).astype(float)
+    counts[:, 0] -= 1
+    shell_n = np.diff(np.column_stack([np.zeros(len(pxy)), counts]), axis=1).clip(min=0)
+    mids = (np.concatenate([[0], SHELLS[:-1]]) + SHELLS) / 2
+    G = shell_n @ np.exp(-mids / P.sigma)
+    b = P.beta[1]
+    slow = 1 - P.pi
+    W = window(pxy, key_index, events, T - pd.Timedelta(days=DT_MAX), T, T + pd.Timedelta(seconds=1))
+    past = (W.src_t < 0) & (W.src_own >= 0)
+    age = -W.src_t[past]
+    mass = slow * (np.exp(-b * age) - np.exp(-b * (age + horizon)))
+    past_push = np.zeros(len(pxy))
+    np.add.at(past_push, W.src_own[past], P.a_nb[W.src_k[past]] * mass)
+    share = np.bincount(W.src_k, minlength=len(KINDS)) / max(len(W.src_k), 1)
+    a_bar = float(share @ P.a_nb)
+    inside = 1 - (1 - np.exp(-b * horizon)) / (b * horizon)
+    return G * (past_push + own_future * a_bar * slow * inside)

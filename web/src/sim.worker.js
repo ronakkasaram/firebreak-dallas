@@ -261,8 +261,22 @@ function summary(stab, runs, seed) {
   };
 }
 
+// Live reports filed after the snapshot: appended as new cases dated today, so they charge their
+// neighbours in every later simulation.
+function addEvents(ev) {
+  const grow = (a, T, vals) => { const o = new T(a.length + vals.length); o.set(a); o.set(vals, a.length); return o; };
+  E = { m: E.m + ev.length,
+    lon: grow(E.lon, Float32Array, ev.map(x => x.lon)), lat: grow(E.lat, Float32Array, ev.map(x => x.lat)),
+    day: grow(E.day, E.day.constructor, ev.map(() => today)), kind: grow(E.kind, Uint8Array, ev.map(x => x.kind)),
+    b: grow(E.b, Int32Array, ev.map(x => x.b)), new_case: grow(E.new_case, Uint8Array, ev.map(() => 1)) };
+  const lo = today - P.window;
+  eGrid = gridOf(E.lon, E.lat, E.m, j => E.new_case[j] && KIND_MAP[E.kind[j]] >= 0 && E.day[j] >= lo && E.day[j] <= today);
+  R = null;
+}
+
 onmessage = ({ data: msg }) => {
   if (msg.type === 'init') return init(msg);
+  if (msg.type === 'add') return addEvents(msg.ev);
   if (msg.type === 'focus') {
     if (!R || R.i !== msg.i) region(msg.i);
     return postMessage(summary(msg.stab, msg.runs, msg.seed));

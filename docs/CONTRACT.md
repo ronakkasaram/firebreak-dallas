@@ -1,6 +1,6 @@
 # The contract
 
-The pipeline writes 6 files to `web/public/data/`. The console reads only these files. If you change a field, change this file in the same commit and post on the board.
+The pipeline writes 9 files to `web/public/data/`. The console reads only these files. If you change a field, change this file in the same commit and post on the board.
 
 ## meta.json
 
@@ -36,6 +36,14 @@ One record per building, column after column, little-endian. Read it with `meta.
 | `reports_365` | uint8 | Property reports at this building in the last year (capped at 255) |
 | `mu` | float32 | Hawkes background rate today: expected reports per day with no recent reports nearby |
 | `district` | uint8 | Dallas city council district (1 to 14, 0 if unknown), from the nearest 311 record |
+| `risk_lo`, `risk_hi` | uint8 | Venn-Abers calibrated interval for `risk`, `/ 255` |
+| `certified` | uint8 | 1 if on today's certified list (conformal selection, at most 10% expected wrong) |
+| `push_nb` | uint16 | `/ 5000` = Hawkes expected reports in the next 90 days set off by neighbours' recent reports |
+| `push_share` | uint8 | `/ 255` = share of this building's expected reports that come from neighbours (the rest is its background and its own recent reports) |
+| `spare` | uint16 | `/ 5000` = expected reports at other buildings prevented if this one is stabilized now (first order) |
+| `street` | uint16 | Index into `search.json` `streets` (street name and zip, no house number) |
+| `block` | uint16 | 100-block of the house number (0 if none) |
+| `owner` | uint16 | 1-based index into `search.json` `owners` (company portfolios with 3+ buildings), 0 for none |
 
 ## events.bin
 
@@ -60,6 +68,8 @@ The house-by-house spread model (`backend/firebreak/hawkes.py`).
 | `branching` | By kind: `same_house` and `neighbours`, new reports each report sets off on the slow scale. |
 | `arcs` | Rows of `arcs_columns`: `src_lon`, `src_lat`, `dst_lon`, `dst_lat`, `p` (probability the source set off the destination), `day_since_window_start`, `src_kind` (index into `KINDS`: code, rental, tenant, vacancy, nuisance). |
 | `arcs_window_start` | Day 0 for `arcs`. |
+| `fit.residuals` | `ks_hawkes`, `ks_poisson`, `n`: Ogata time-rescaling KS distance on the test window. |
+| `reproduction` | `months`, `city` (per month: `r`, `amplifier` = 1 / (1 - R), `reports`, `provisional`, `triggered_share`), `districts` (R by month per council district). Realised R, Wallinga-Teunis on the fitted model. |
 | `as_ranker` | Top-2,000 precision of the Hawkes forecast on `cutoff` next to the boosted model's. |
 
 ## hotspots.json
@@ -105,3 +115,30 @@ No owner names or mailing addresses ever go in this file.
 | Magnet | Matches repeat cash buyers from deed records |
 | Shield | Compliance: homestead owners get help first, Texas wholesaling disclosure |
 | Closer | Assignment and title once a human signs |
+
+## alarms.json
+
+Emerging clusters today (`backend/firebreak/scan.py`): expectation-based Poisson scan with the fast subset scan over each 150 m cell's 24 nearest cells.
+
+| Field | Meaning |
+|---|---|
+| `as_of`, `cell_m`, `k`, `windows` | Scan settings (windows in days) |
+| `clusters` | `window_days`, `score`, `observed` (distinct buildings with a new case), `expected`, `p` and `recurrence_weeks` (against the strongest cluster of every week in the past year), `p_poisson`, `buildings`, `cells` (`[lon, lat]` of each 150 m cell) |
+| `backtest` | Top 3 clusters per week followed for `follow_days`: `weeks`, `clusters_followed`, median and pooled observed / expected after, and the same for a control of the busiest cells (`control_*`) |
+| `timeline` | Per week: `max_score` and the top 3 `[lon, lat, score]` |
+
+## evidence.json
+
+| Field | Meaning |
+|---|---|
+| `calibration` | `train_to`, `calibrate_on`, `test_on`, `deciles` (`lo`, `hi`, `predicted`, `observed`), widths, Brier scores, and `selection` (`city_q10`, `by_district_q10`, ... each with `q`, `selected`, `realised_fdr`) |
+| `live` | `q`, `certified` (count), `certified_idx` (rows in `buildings.bin`) |
+| `closure` | Natural experiment on fast vs slow case closure: `cases`, `fast_cases`, `slow_cases`, and `main`, `placebo_infrastructure`, `placebo_before_case`, each with `effect_per_1000_buildings`, `ci95`, `effect_pct`, `ci95_pct` |
+
+## search.json
+
+| Field | Meaning |
+|---|---|
+| `streets` | Street name and zip, no house numbers |
+| `owners` | Company portfolios with 3+ buildings: `label`, `buildings`. Never a person's name |
+| `names` | Building names from DCAD, by row in `buildings.bin` |

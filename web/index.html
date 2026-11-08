@@ -6,58 +6,57 @@
   <title>Firebreak</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,600;1,6..96,400&family=Martian+Mono:wght@300;400;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
 </head>
 <body>
   <div id="app">
+    <header id="topbar">
+      <div class="brand">
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><rect x="1" y="1" width="6" height="16" rx="1" fill="#dd513a"/><rect x="11" y="1" width="6" height="16" rx="1" fill="#33363d"/></svg>
+        <b>Firebreak</b><span class="sub" id="asof"></span>
+      </div>
+      <nav class="seg" id="views" aria-label="Workflow">
+        <button data-view="detect"><span class="n">1</span>Detect</button>
+        <button data-view="predict"><span class="n">2</span>Predict</button>
+        <button data-view="simulate"><span class="n">3</span>Simulate</button>
+        <button data-view="act"><span class="n">4</span>Act</button>
+        <button data-view="evidence"><span class="n">5</span>Evidence</button>
+      </nav>
+      <div class="search">
+        <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Street, building name or owner" aria-label="Search" />
+        <kbd>/</kbd>
+        <div id="q-results" hidden></div>
+      </div>
+      <div class="top-right">
+        <div class="live" id="live" title="Dallas 311 live feed"><i></i><span>snapshot</span></div>
+        <button class="btn" id="share">Copy link</button>
+      </div>
+    </header>
+
     <main id="stage">
       <div id="map"></div>
-
-      <header class="hud">
-        <div class="mark">FIREBREAK<span>predict before it spreads · Dallas</span></div>
-        <div class="hud-stats" id="hud-stats"></div>
-      </header>
-
-      <div class="modes" id="modes">
-        <button data-mode="spread" class="on">[ spread ]</button>
-        <button data-mode="backtest">[ proof ]</button>
-        <button data-mode="forecast">[ next 90 days ]</button>
-        <button data-mode="wholesale">[ wholesale ]</button>
-        <button data-mode="house">[ house by house ]</button>
+      <div class="legend card" id="legend"></div>
+      <div class="toolbar">
+        <button class="btn" id="pitch" title="Toggle 2D / 3D (P)">2D</button>
       </div>
-
-      <div class="legend" id="legend"></div>
-
-      <footer class="timebar">
-        <div class="timebar-row">
-          <button id="play" class="play" aria-label="Play">▶</button>
-          <b id="date">—</b>
-          <span id="caption" class="muted"></span>
+      <div class="readout card" id="readout" hidden></div>
+      <footer id="timebar" class="card">
+        <div class="tb-row">
+          <button id="play" class="icon-btn" aria-label="Play (space)"><svg width="10" height="12" viewBox="0 0 10 12"><path d="M0 0l10 6-10 6z" fill="currentColor"/></svg></button>
+          <select id="speed" class="speed" aria-label="Speed"><option value="1">1×</option><option value="3" selected>3×</option><option value="7">7×</option></select>
+          <span class="date" id="date">—</span>
+          <span class="cap" id="caption"></span>
         </div>
-        <input id="slider" type="range" min="0" max="820" value="730" step="1" />
-        <div class="ticks" id="ticks"></div>
+        <div class="track">
+          <svg id="hist" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <input id="slider" type="range" min="0" max="820" value="730" step="1" aria-label="Date" />
+          <div class="ticks" id="ticks"></div>
+        </div>
       </footer>
-      <div id="loading" class="loading">reading 241,000 buildings …</div>
+      <div id="loading" class="loading"><span id="load-text">Loading 241,588 buildings and 2 years of 311 reports</span><div class="bar"><i id="load-bar"></i></div></div>
     </main>
 
-    <aside id="side">
-      <section id="claim"></section>
-      <section id="list-wrap">
-        <div class="kicker-row">
-          <div class="kicker">Where to cut the firebreak</div>
-          <div class="filters" id="filters">
-            <button data-c="all" class="on">all</button>
-            <button data-c="home">homes</button>
-            <button data-c="multifamily">multifamily</button>
-            <button data-c="commercial">commercial</button>
-          </div>
-        </div>
-        <ol id="list"></ol>
-      </section>
-      <section id="wholesale" hidden></section>
-      <section id="house" hidden></section>
-      <section id="dossier" hidden></section>
-    </aside>
+    <aside id="side"><div id="panel"></div><div id="detail" hidden></div></aside>
   </div>
   <script type="module" src="/src/main.js"></script>
 </body>

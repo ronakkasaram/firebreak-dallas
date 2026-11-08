@@ -111,3 +111,42 @@ def test_lead_time_counts_only_visits_before_the_first_report():
     r = out["rankings"]["m"]
     assert r["cases_reached_early"] == 2  # building 0 on day 0 (10 days early), building 3 on day 3 (2 days early)
     assert r["median_days_ahead"] == 6.0
+
+
+def test_benjamini_hochberg_and_conformal_selection_keep_their_error_rate():
+    from firebreak import calibrate
+    p = np.array([0.001, 0.008, 0.039, 0.041, 0.042, 0.06, 0.074, 0.205, 0.212, 0.216])
+    assert calibrate.bh(p, 0.05).sum() == 2
+    rng = np.random.default_rng(0)
+    s = rng.random(20000)
+    y = (rng.random(20000) < s).astype(int)  # a perfectly calibrated score
+    sel = calibrate.select(s[:10000], y[:10000], s[10000:], 0.1)
+    assert sel.sum() > 100
+    assert 1 - y[10000:][sel].mean() <= 0.12
+
+
+def test_venn_abers_interval_brackets_a_calibrated_score():
+    from firebreak import calibrate
+    rng = np.random.default_rng(1)
+    s = rng.random(30000)
+    y = (rng.random(30000) < s).astype(int)
+    lo, hi, _ = calibrate.venn_abers(s, y, np.array([0.2, 0.5, 0.8]))
+    assert np.all(lo <= hi + 1e-9)
+    assert np.all(np.abs((lo + hi) / 2 - np.array([0.2, 0.5, 0.8])) < 0.05)
+
+
+def test_subset_scan_finds_the_planted_cluster():
+    from firebreak import scan
+    n = 50
+    rng = np.random.default_rng(2)
+    pts = rng.random((n, 2)) * 1000
+    nbr = np.argsort(((pts[:, None] - pts[None]) ** 2).sum(-1), axis=1)[:, :5]
+    b = np.full(n, 1.0)
+    c = rng.poisson(1.0, n).astype(float)
+    hot = nbr[7, :3]
+    c[hot] += 12
+    score, k, _ = scan._ltss(c, b, nbr)
+    best = score.argmax()
+    chosen = nbr[best][np.argsort(-(c[nbr[best]] / b[nbr[best]]))[: k[best]]]
+    assert set(hot) <= set(chosen)
+    assert score.max() > 20
